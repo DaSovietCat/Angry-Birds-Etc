@@ -1,0 +1,17 @@
+{
+  "Name": "Angry Birds Mod Etc",
+  "Author": "Soviet Cat",
+  "Description": "A mod of Angry Birds Mod Recoded (credits to Lee Myung-bak) with just more stuff",
+  "ModVersion": "v2.1",
+  "GameVersion": "1.27.5",
+  "ThumbnailPath": "ab.png",
+  "EntryPoint": "AngryBirds.AngryBirds",
+  "Tags": [],
+  "Scripts": [
+    "Angry.cs",
+    "AngryBirdsBehaviour.cs"
+  ],
+  "Active": true,
+  "UGCIdentity": null,
+  "CreatorUGCIdentity": "3163945215"
+}
