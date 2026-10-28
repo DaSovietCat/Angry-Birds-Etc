@@ -46,50 +46,127 @@ public class ModAPI2
         return null;
     }
 }
+public static class SoundFX
+{
+    static Dictionary<string, AudioClip> cache = new Dictionary<string, AudioClip>();
+    static HashSet<string> warned = new HashSet<string>();
+ 
+    // file = just the file name, e.g. "shockwave.wav" (it's looked for in the AudioClip folder)
+    public static void PlayAt(string file, Vector3 position, float volume)
+    {
+        AudioClip clip = null;
+        if (!cache.TryGetValue(file, out clip) || clip == null)
+        {
+            clip = ModAPI2.LoadSound("AudioClip/" + file);
+            if (clip != null && clip.length > 0.01f)
+                cache[file] = clip;
+            else
+                clip = null;
+        }
+        if (clip == null)
+        {
+            if (warned.Add(file))
+                ModAPI.Notify("<color=red>" + file + " didn't load</color>");
+            return;
+        }
+ 
+        GameObject g = new GameObject("SFX " + file);
+        g.transform.position = position;
+        AudioSource s = g.AddComponent<AudioSource>();
+        s.playOnAwake = false;
+        s.loop = false;
+        s.mute = false;
+        s.volume = Mathf.Clamp01(volume);
+        s.maxDistance = 100f;
+        s.rolloffMode = AudioRolloffMode.Linear;
+        s.spatialBlend = 1f;
+        s.PlayOneShot(clip);
+        UnityEngine.Object.Destroy(g, clip.length + 0.5f);
+    }
+}
 public class Red : MonoBehaviour
 {
-    CircleCollider2D range;
-    bool ability = false;
     AngryBird bird;
+    AudioSource cawSource;
+    AudioClip[] caws = { null, null, null, null };
+ 
     void Start()
     {
         bird = GetComponent<AngryBird>();
-        if (!GetComponent<CircleCollider2D>() || !GetComponent<CircleCollider2D>().isTrigger)
+        if (bird != null)
+            bird.noAbility = true;      // so the trail doesn't mark an "ability" cloud when he caws
+ 
+        // His own AudioSource, 2D so distance and the listener can't make it inaudible
+        cawSource = gameObject.AddComponent<AudioSource>();
+        cawSource.playOnAwake = false;
+        cawSource.loop = false;
+        cawSource.mute = false;
+        cawSource.volume = 1f;
+        cawSource.spatialBlend = 0f;
+ 
+        try
         {
-            range = gameObject.AddComponent<CircleCollider2D>();
-            range.isTrigger = true;
-            range.radius = 5f;
+            for (int n = 1; n <= 3; n++)
+                caws[n] = LoadCaw(n);
         }
-        else
-            range = GetComponent<CircleCollider2D>();
+        catch (System.Exception e)
+        {
+            ModAPI.Notify("<color=red>Red: loading the caws failed: " + e.Message + "</color>");   // DEBUG
+        }
+ 
+        int loaded = 0;
+        for (int n = 1; n <= 3; n++)
+            if (caws[n] != null)
+                loaded++;
+ 
         if (!gameObject.GetComponent<TriggerEventBehaviour>())
         {
-            bird.sprite[2] = bird.sprite[1];
             gameObject.AddComponent<UseEventTrigger>().Action = () =>
             {
-                ability = true;
-                bird.Stun(1);
-                bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
-                bird.mouth.Play();
-                Invoke("Deactivate", 1);
-                ModAPI.CreateParticleEffect("Disintegration", transform.position);
+                Caw();
             };
         }
-    }
-    void Deactivate()
-    {
-        ability = false;
-    }
-    void OnTriggerStay2D(Collider2D collision)
-    {
-        if (ability == false)
-            return;
-        if (Utility.Distance(collision.transform.position, transform.position) > 5)
-            return;
-        if(collision.GetComponent<Rigidbody2D>().mass < 10)
-            collision.gameObject.GetComponent<Rigidbody2D>().velocity += (Vector2)(collision.gameObject.transform.position - transform.position) * 8 * Time.deltaTime;
         else
-            collision.gameObject.GetComponent<Rigidbody2D>().AddForce((Vector2)(collision.gameObject.transform.position - transform.position) * 80 * Time.deltaTime, ForceMode2D.Impulse);
+            ModAPI.Notify("<color=red>Red: a use-trigger already exists, so Caw() isn't hooked up</color>");   // DEBUG
+    }
+ 
+    // Tries red_caw1.wav / red_caw2.wav / red_caw3.wav first, then red_caw.wav / red_caw_2.wav / red_caw_3.wav.
+    // A missing or broken file can come back as null OR as an empty clip, so only a clip with real length counts.
+    static AudioClip LoadCaw(int n)
+    {
+        string[] names;
+        if (n == 1)
+            names = new string[] { "red_caw1.wav", "red_caw.wav", "red_caw_1.wav" };
+        else
+            names = new string[] { "red_caw" + n + ".wav", "red_caw_" + n + ".wav" };
+ 
+        for (int i = 0; i < names.Length; i++)
+        {
+            AudioClip c = ModAPI2.LoadSound("AudioClip/" + names[i]);
+            if (c != null && c.length > 0.01f)
+                return c;
+        }
+        return null;
+    }
+ 
+    void Caw()
+    {
+        for (int n = 1; n <= 3; n++)
+            if (caws[n] == null)
+                caws[n] = LoadCaw(n);       // try again now, in case they weren't ready at spawn
+ 
+        List<AudioClip> found = new List<AudioClip>();
+        for (int i = 1; i <= 3; i++)
+            if (caws[i] != null)
+                found.Add(caws[i]);
+        if (found.Count == 0)
+        {
+            ModAPI.Notify("<color=red>Red: none of the red_caw clips loaded</color>");
+            return;
+        }
+ 
+        AudioClip pick = found[UnityEngine.Random.Range(0, found.Count)];
+        cawSource.PlayOneShot(pick, 1f);
     }
 }
 public class MightyRed : MonoBehaviour
@@ -107,6 +184,14 @@ public class MightyRed : MonoBehaviour
     public float featherSpin = 120f;
     public bool onlyWhileCharging = false;   // true = feathers only appear during the pause + dash
 	public bool regrowFeathers = true;   // new feathers appear again once the dash ends
+    // Only for Slingshot X shots
+    public float backDistance = 1f;     // how far he backs away from the mouse before dashing
+    public float turnSpeed = 440f;       // degrees per second when turning to face the mouse
+    public bool facesRight = true;        // set to false if his sprite faces LEFT and he turns the wrong way
+    public bool dashUntilCollision = true;   // keeps dashing (zero gravity, heavy) until he collides with something
+    public float maxDashTime = 8f;           // safety limit, in case he never hits anything
+    bool hitSomething = false;
+    public float dashSpin = 1080f;            // degrees per second he spins while dashing (0 = no spin)
  
     List<GameObject> feathers = new List<GameObject>();
  
@@ -165,15 +250,43 @@ public class MightyRed : MonoBehaviour
             };
         }
     }
+	
+    // The z angle that makes him face a direction
+    float AngleOf(Vector2 dir)
+    {
+        float a = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+        bool flipped = transform.localScale.x < 0f;
+        if (facesRight == flipped)
+            a += 180f;
+        return a;
+    }
+ 
+     void OnCollisionEnter2D(Collision2D c)
+    {
+        if (active)
+            hitSomething = true;
+    }
  
     IEnumerator Dash()
     {
         active = true;
-		if (onlyWhileCharging) SpawnFeathers();
+        bird.freeRotation = true;
+        bool fromSlingshot = bird.shotFromSlingshot;     // fired from Slingshot X? then he behaves a bit differently
+        if (onlyWhileCharging) SpawnFeathers();
         float originalMass = bird.rb.mass;
         float originalGravity = bird.rb.gravityScale;
  
-        // ---- Phase 1: hover in place ----
+        // Slingshot shots: the aim is locked the second you activate him
+        Vector2 lockedDir = Vector2.right;
+        if (fromSlingshot)
+        {
+            Vector2 mouse = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            lockedDir = (mouse - (Vector2)transform.position).normalized;
+            if (lockedDir == Vector2.zero)
+                lockedDir = Vector2.right;
+        }
+ 
+        // ---- Phase 1: hover (slingshot shots: turn to the mouse and back away) ----
         bird.enableSelfBalancing = false;   // stop the "stand upright" torque while charging
         bird.rb.gravityScale = 0f;
         bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
@@ -183,34 +296,65 @@ public class MightyRed : MonoBehaviour
         float t = 0f;
         while (t < pauseTime)
         {
-            bird.rb.velocity = Vector2.zero;
+            if (fromSlingshot)
+            {
+                // turn toward the mouse, and drift backwards (fast at first, then slowing to a stop)
+                float backSpeed = 2f * backDistance / Mathf.Max(0.01f, pauseTime) * (1f - t / pauseTime);
+                bird.rb.velocity = -lockedDir * backSpeed;
+                float next = Mathf.MoveTowardsAngle(transform.eulerAngles.z, AngleOf(lockedDir), turnSpeed * Time.deltaTime);
+                transform.rotation = Quaternion.Euler(0f, 0f, next);
+            }
+            else
+                bird.rb.velocity = Vector2.zero;
             bird.rb.angularVelocity = 0f;
             t += Time.deltaTime;
             yield return null;
         }
  
-        // ---- Phase 2: aim at the mouse RIGHT NOW (after the pause) and launch ----
-        Vector2 aimPoint = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        if (bird.AI && bird.target != null)          // with AI on, dash at his target instead
-            aimPoint = bird.target.transform.position;
- 
-        Vector2 dir = (aimPoint - (Vector2)transform.position).normalized;
-        if (dir == Vector2.zero)
-            dir = Vector2.right;
+        // ---- Phase 2: launch ----
+        Vector2 dir;
+        if (fromSlingshot)
+        {
+            dir = lockedDir;                          // the direction locked at activation
+        }
+        else
+        {
+            // not from the slingshot: aim at the mouse RIGHT NOW (after the pause), as before
+            Vector2 aimPoint = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            if (bird.AI && bird.target != null)          // with AI on, dash at his target instead
+                aimPoint = bird.target.transform.position;
+            dir = (aimPoint - (Vector2)transform.position).normalized;
+            if (dir == Vector2.zero)
+                dir = Vector2.right;
+        }
  
         bird.wireAction = AngryBird.WireAction.DestroyOnHighSpeed;
         bird.rb.mass = originalMass * 3f;            // heavier = hits harder (same trick as Chuck/Hal)
         bird.rb.velocity = dir * dashSpeed;
-		DropFeathers();
+        float spinSign = dir.x >= 0f ? -1f : 1f;                 // rolls forward: clockwise when going right, anticlockwise when going left
+        bird.rb.angularVelocity = dashSpin * spinSign;
+        DropFeathers();
         ModAPI.CreateParticleEffect("Flash", transform.position);
  
-        yield return new WaitForSeconds(dashDuration);
+        if (dashUntilCollision)
+        {
+            float flown = 0f;
+            while (!hitSomething && flown < maxDashTime)
+            {
+                flown += Time.deltaTime;
+                bird.rb.angularVelocity = dashSpin * spinSign;
+                yield return null;
+            }
+        }
+        else
+            yield return new WaitForSeconds(dashDuration);
  
         // ---- Phase 3: back to normal ----
         bird.rb.mass = originalMass;
         bird.rb.gravityScale = originalGravity;
-        bird.enableSelfBalancing = true;
-		if (regrowFeathers && !onlyWhileCharging) SpawnFeathers();
+        bird.freeRotation = false;
+        // slingshot shots don't grow their feathers back
+        if (regrowFeathers && !onlyWhileCharging && !fromSlingshot) SpawnFeathers();
         active = false;
     }
 }
@@ -439,6 +583,8 @@ public class HomingBird : MonoBehaviour
             return;
         if (onlyInFlight && bird.stat != AngryBird.Status.SlingFly)
             return;
+        if (bird != null && bird.AbilityLocked)
+            return;
  
         StartCoroutine(Strike(pig));
     }
@@ -475,6 +621,9 @@ public class HomingBird : MonoBehaviour
     IEnumerator Strike(BadPig pig)
     {
         busy = true;
+		BirdTrail homingTrail = GetComponent<BirdTrail>();
+        if (homingTrail != null)
+            homingTrail.MarkAbility();
         float originalMass = bird.rb.mass;
         float originalGravity = bird.rb.gravityScale;
  
@@ -635,6 +784,216 @@ public class HomingField : MonoBehaviour
         return discSprite;
     }
 }
+// Makes a bird fly in zero gravity once it is shot from Slingshot X.
+// (Both Space birds add this to themselves; later Space birds can do the same.)
+public class SpaceFlight : MonoBehaviour
+{
+    AngryBird bird;
+    bool applied = false;
+    float originalGravity = 1f;
+    float flightTime = 0f;
+    float hitTime = 0f;
+    bool done = false;
+ 
+    // Tuning knobs
+    public bool zeroGravityOnLaunch = true;   // false = this bird flies like a normal bird
+    public float maxFlightTime = 8f;         // a bird that never hits anything disappears this many seconds after launch
+    public float despawnAfterHit = 14f;        // a bird drifting around after its first hit disappears after this many seconds
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+    }
+ 
+    void FixedUpdate()
+    {
+        if (done || bird == null || bird.rb == null)
+            return;
+ 
+        if (bird.shotFromSlingshot)
+        {
+            if (!applied)
+            {
+                // The moment he is launched: remember normal gravity, then switch it off
+                applied = true;
+                originalGravity = bird.rb.gravityScale;
+                flightTime = 0f;
+                hitTime = 0f;
+                if (zeroGravityOnLaunch)
+                    bird.rb.gravityScale = 0f;
+            }
+ 
+            flightTime += Time.fixedDeltaTime;
+            if (bird.hasCollidedAfterShot)
+                hitTime += Time.fixedDeltaTime;
+ 
+            // Without gravity he would drift forever (the "lying still" despawn never triggers), so he gets a time limit
+            if (flightTime > maxFlightTime || hitTime > despawnAfterHit)
+            {
+                done = true;
+                bird.Die();
+            }
+        }
+        else if (applied)
+        {
+            // He was caught by the slingshot again: back to normal gravity
+            applied = false;
+            bird.rb.gravityScale = originalGravity;
+        }
+    }
+}
+ 
+// The red ring that expands outward from Super Red's shockwave
+public class SpaceWaveRing : MonoBehaviour
+{
+    public float maxRadius = 8f;
+    public float duration = 0.45f;
+    public float width = 0.25f;
+    public Color32 color = new Color32(255, 40, 40, 255);
+ 
+    const int Points = 48;
+    LineRenderer lr;
+    float t = 0f;
+ 
+    void Start()
+    {
+        Shader sh = Shader.Find("Sprites/Default");
+        if (sh == null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        lr = gameObject.AddComponent<LineRenderer>();
+        lr.material = new Material(sh);
+        lr.useWorldSpace = true;
+        lr.positionCount = Points + 1;      // one extra point closes the circle
+        lr.sortingOrder = 50;
+    }
+ 
+    void Update()
+    {
+        if (lr == null)
+            return;
+ 
+        t += Time.deltaTime;
+        float f = Mathf.Clamp01(t / duration);
+        float ease = 1f - (1f - f) * (1f - f);          // fast at first, slowing toward the edge
+        float r = Mathf.Lerp(0.3f, maxRadius, ease);
+ 
+        Color c = color;
+        c.a = 1f - f;
+        lr.startColor = c;
+        lr.endColor = c;
+        lr.startWidth = width * (1f - 0.6f * f);
+        lr.endWidth = width * (1f - 0.6f * f);
+ 
+        Vector3 center = transform.position;
+        for (int i = 0; i <= Points; i++)
+        {
+            float a = (float)i / Points * 2f * Mathf.PI;
+            lr.SetPosition(i, new Vector3(center.x + Mathf.Cos(a) * r, center.y + Mathf.Sin(a) * r, center.z));
+        }
+ 
+        if (f >= 1f)
+            Destroy(gameObject);
+    }
+}
+ 
+// SUPER RED: when activated he sends out a red shockwave that pushes everything away (a bit)
+public class SuperRed : MonoBehaviour
+{
+    AngryBird bird;
+    bool ready = true;
+ 
+    // Tuning knobs
+    public float radius = 4f;            // how far the wave reaches
+    public float power = 8f;            // push speed at the centre (fades toward the edge). Bigger = stronger push
+    public float massThreshold = 40f;    // bodies lighter than this get the full push; heavier ones get proportionally less
+    public float cooldown = 0f;          // seconds before he can fire again
+    public bool pushOtherBirds = true;  // false = friendly birds ("Player" tag) are left alone
+    public float effectScale = 1f;     // multiplies the size of the explosion / flash effect
+    public Color32 waveColor = new Color32(255, 0, 0, 255);
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+ 
+        // Zero gravity when shot from Slingshot X
+        if (!GetComponent<SpaceFlight>())
+            gameObject.AddComponent<SpaceFlight>();
+ 
+        // Same guard the other birds use, so the ability isn't hooked up twice
+        if (!gameObject.GetComponent<TriggerEventBehaviour>())
+        {
+            gameObject.AddComponent<UseEventTrigger>().Action = () =>
+            {
+                if (!ready)
+                    return;
+                ready = false;
+                Invoke("Recharge", cooldown);
+                BirdTrail trail = GetComponent<BirdTrail>();
+                if (trail != null)
+                    trail.MarkAbility();
+                Blast();
+            };
+        }
+    }
+ 
+    void Recharge()
+    {
+        ready = true;
+    }
+ 
+    // Says a random one of his ability voicelines (only the ones that exist)
+    void SayAbility()
+    {
+        if (bird == null || bird.mouth == null || bird.use == null)
+            return;
+        List<AudioClip> clips = new List<AudioClip>();
+        for (int i = 1; i < bird.use.Length && i <= 3; i++)
+            if (bird.use[i] != null)
+                clips.Add(bird.use[i]);
+        if (clips.Count == 0)
+            return;
+        bird.mouth.clip = clips[UnityEngine.Random.Range(0, clips.Count)];
+        bird.mouth.Play();
+    }
+ 
+    void Blast()
+    {
+        SayAbility();
+        Utility.CreateFeatherEffect(new Color32(255, 0, 0, 255), transform.position);
+ 
+        // Visuals: a red explosion, a flash, and a ring that spreads out to the edge of the wave
+        Utility.CreateAnimation("Explosion", 15, transform.position, waveColor).transform.localScale = 2f * effectScale * Vector2.one;
+        ModAPI.CreateParticleEffect("Flash", transform.position).transform.localScale = effectScale * Vector3.one;
+        GameObject ringObject = new GameObject("SpaceWaveRing");
+        ringObject.transform.position = transform.position;
+        SpaceWaveRing ring = ringObject.AddComponent<SpaceWaveRing>();
+        ring.maxRadius = radius;
+        ring.color = waveColor;
+ 
+        // One body can have several colliders, so remember who we already pushed
+        HashSet<Rigidbody2D> done = new HashSet<Rigidbody2D>();
+ 
+        foreach (Collider2D c in Physics2D.OverlapCircleAll(transform.position, radius))
+        {
+            Rigidbody2D target = c.attachedRigidbody;
+            if (target == null || target == bird.rb || !done.Add(target))
+                continue;
+            if (target.gameObject.layer == 11)                       // the ground stays put
+                continue;
+            if (!pushOtherBirds && target.gameObject.CompareTag("Player"))
+                continue;
+ 
+            Vector2 offset = target.position - (Vector2)transform.position;
+            Vector2 dir = offset.sqrMagnitude > 0.0001f ? offset.normalized : Vector2.up;
+            float falloff = Mathf.Lerp(1f, 0.3f, offset.magnitude / radius);
+ 
+            Utility.AddReasonableForceImpulse(target, dir, power * falloff, massThreshold);
+        }
+    }
+}
 public class Chuck : MonoBehaviour
 {
     AngryBird bird;
@@ -663,33 +1022,325 @@ public class Chuck : MonoBehaviour
     }
     void Reset()
     {
-        bird.rb.mass = 2;
+        bird.rb.mass = bird.mass;
+    }
+}
+// LAZER BIRD: when activated he instantly shoots toward the mouse (turning to face it) and keeps going until he hits something
+public class LazerBird : MonoBehaviour
+{
+    AngryBird bird;
+    bool active = false;
+    bool hitSomething = false;
+    float activeTime = 0f;
+ 
+    // Tuning knobs
+    public float dashSpeed = 40f;          // how fast the laser dash is (Chuck's charge is about 30)
+    public float massMultiplier = 3f;      // heavier while dashing = hits harder (same trick as Chuck)
+    public float maxDashTime = 4f;         // safety limit, in case he never hits anything
+    public float collisionGrace = 0.1f;   // seconds after activation in which touching something doesn't count
+    public bool facesRight = true;         // set to false if his sprite faces LEFT and he turns the wrong way
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+ 
+        // Zero gravity when shot from Slingshot X
+        if (!GetComponent<SpaceFlight>())
+            gameObject.AddComponent<SpaceFlight>();
+ 
+        // Same guard the other birds use, so the ability isn't hooked up twice
+        if (!gameObject.GetComponent<TriggerEventBehaviour>())
+        {
+            gameObject.AddComponent<UseEventTrigger>().Action = () =>
+            {
+                if (active)
+                    return;
+                BirdTrail trail = GetComponent<BirdTrail>();
+                if (trail != null)
+                    trail.MarkAbility();
+                StartCoroutine(Zap());
+            };
+        }
+    }
+ 
+    // The z angle that makes him face a direction (same idea as Mighty Feathers Red and Silver)
+    float AngleOf(Vector2 dir)
+    {
+        float a = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+        bool flipped = transform.localScale.x < 0f;
+        if (facesRight == flipped)
+            a += 180f;
+        return a;
+    }
+ 
+    void OnCollisionEnter2D(Collision2D c)
+    {
+        if (active && activeTime >= collisionGrace)
+            hitSomething = true;
+    }
+ 
+    // Says a random one of his ability voicelines (only the ones that exist)
+    void SayAbility()
+    {
+        if (bird == null || bird.mouth == null || bird.use == null)
+            return;
+        List<AudioClip> clips = new List<AudioClip>();
+        for (int i = 1; i < bird.use.Length && i <= 3; i++)
+            if (bird.use[i] != null)
+                clips.Add(bird.use[i]);
+        if (clips.Count == 0)
+            return;
+        bird.mouth.clip = clips[UnityEngine.Random.Range(0, clips.Count)];
+        bird.mouth.Play();
+    }
+ 
+    IEnumerator Zap()
+    {
+        active = true;
+        hitSomething = false;
+        activeTime = 0f;
+        bird.freeRotation = true;             // so the bird's own "point along the flight" rule doesn't fight the turn
+        bird.enableSelfBalancing = false;
+        float originalGravity = bird.rb.gravityScale;
+        float originalMass = bird.rb.mass;
+        AngryBird.WireAction originalWire = bird.wireAction;
+ 
+        try
+        {
+            // Aim at the mouse RIGHT NOW (with AI on, at his target instead)
+            Vector2 aimPoint = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            if (bird.AI && bird.target != null)
+                aimPoint = bird.target.transform.position;
+            Vector2 dir = (aimPoint - (Vector2)transform.position).normalized;
+            if (dir == Vector2.zero)
+                dir = Vector2.right;
+ 
+            SayAbility();
+            ModAPI.CreateParticleEffect("Flash", transform.position);
+ 
+            bird.wireAction = AngryBird.WireAction.DestroyOnHighSpeed;
+            bird.rb.mass = originalMass * massMultiplier;
+            bird.rb.gravityScale = 0f;        // a laser flies straight
+ 
+            // Turn and shoot in the very same moment
+            bird.rb.rotation = AngleOf(dir);
+            bird.rb.velocity = dir * dashSpeed;
+            bird.rb.angularVelocity = 0f;
+ 
+            float flown = 0f;
+            while (!hitSomething && flown < maxDashTime)
+            {
+                bird.rb.velocity = dir * dashSpeed;
+                bird.rb.angularVelocity = 0f;
+                bird.rb.rotation = AngleOf(dir);
+                flown += Time.fixedDeltaTime;
+                activeTime += Time.fixedDeltaTime;
+                yield return new WaitForFixedUpdate();
+            }
+        }
+        finally
+        {
+            // Back to normal (always, even if something interrupts the ability)
+            if (bird != null && bird.rb != null)
+            {
+                bird.rb.mass = originalMass;
+                bird.rb.gravityScale = originalGravity;
+            }
+            if (bird != null)
+            {
+                bird.freeRotation = false;
+                bird.wireAction = originalWire;
+            }
+            active = false;
+        }
     }
 }
 public class Bomb : MonoBehaviour
 {
     bool activated = false;
     AngryBird bird;
+    SpriteRenderer sr;
+ 
+    // Fuse: after a Slingshot X shot hits something, Bomb slowly turns orange and then blows up
+    public float fuseTime = 2.5f;                                   // seconds from the hit to the explosion
+    public Color32 fuseColor = new Color32(255, 140, 0, 255);      // the tint he fades toward
+    public bool vanishAfterExplosion = true;                        // Bomb disappears once he has exploded
+ 
+    // Lighting up
+    public Color32 glowColor = new Color32(255, 130, 0, 255);      // the bright orange of the glow
+    public float glowSize = 4f;                                     // diameter of the halo around him (world units)
+    public float overlayMaxAlpha = 0.8f;                           // how solid the orange gets at the end (1 = completely flat orange)
+ 
+    // Blast damage
+    public float blastRadius = 4f;      // how far his explosion damages things
+    public float blockDamage = 28f;     // damage to a block right at the blast. Hp: glass 7, wood 14, stone 28, iron 56 (circles x2)
+    public float pigDamage = 10f;        // pigs have 10 hp
+ 
+    bool fusing = false;
+    bool detonated = false;
+    float fuseTimer = 0f;
+    Color baseColor = Color.white;
+ 
+    GameObject overlayObj = null;
+    GameObject haloObj = null;
+    SpriteRenderer overlaySr = null;
+    SpriteRenderer haloSr = null;
+    static Sprite haloSprite = null;
+ 
     void Start()
     {
         bird = GetComponent<AngryBird>();
+        sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+            baseColor = sr.color;
         gameObject.AddComponent<UseEventTrigger>().Action = () =>
         {
-            bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
-            bird.mouth.Play();
-            GetComponent<ExplosiveBehaviour>().Activate();
-            StartCoroutine("Activate");
+            Detonate();
         };
     }
+ 
+    void Update()
+    {
+        if (detonated || bird == null || sr == null)
+            return;
+ 
+        bool shouldFuse = bird.shotFromSlingshot && bird.hasCollidedAfterShot;
+        if (shouldFuse)
+        {
+            if (!fusing)
+            {
+                fusing = true;
+                fuseTimer = 0f;
+                baseColor = sr.color;
+            }
+            fuseTimer += Time.deltaTime;
+            float k = Mathf.Clamp01(fuseTimer / fuseTime);
+            sr.color = Color.Lerp(baseColor, fuseColor, k);
+            SetGlow(k);
+            if (fuseTimer >= fuseTime)
+                Detonate();
+        }
+        else if (fusing)
+        {
+            // caught by the slingshot again: the fuse is cancelled
+            fusing = false;
+            sr.color = baseColor;
+            HideGlow();
+        }
+    }
+ 
+    // ---- The glow ----
+    void EnsureGlow()
+    {
+        if (overlayObj != null)
+            return;
+ 
+        // bright orange copy of his sprite, drawn over him
+        overlayObj = new GameObject("BombGlowOverlay");
+        overlayObj.transform.SetParent(transform, false);
+        overlaySr = overlayObj.AddComponent<SpriteRenderer>();
+        overlaySr.sortingLayerID = sr.sortingLayerID;
+        overlaySr.sortingOrder = sr.sortingOrder + 1;
+ 
+        // soft round halo behind him
+        haloObj = new GameObject("BombGlowHalo");
+        haloObj.transform.SetParent(transform, false);
+        haloSr = haloObj.AddComponent<SpriteRenderer>();
+        haloSr.sprite = GetHaloSprite();
+        haloSr.sortingLayerID = sr.sortingLayerID;
+        haloSr.sortingOrder = sr.sortingOrder - 1;
+        float parentScale = Mathf.Max(0.01f, Mathf.Abs(transform.lossyScale.x));
+        haloObj.transform.localScale = Vector3.one * glowSize / parentScale;      // glowSize in world units whatever his own scale is
+    }
+ 
+    // k: 0 = not glowing, 1 = about to explode
+    void SetGlow(float k)
+    {
+        EnsureGlow();
+        overlayObj.SetActive(true);
+        haloObj.SetActive(true);
+ 
+        overlaySr.sprite = sr.sprite;           // follows his sprite (it changes when he's stunned)
+        overlaySr.flipX = sr.flipX;
+        overlaySr.flipY = sr.flipY;
+ 
+        Color gc = glowColor;
+        float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * (4f + 14f * k));     // pulses faster as the fuse runs out
+        overlaySr.color = new Color(gc.r, gc.g, gc.b, k * overlayMaxAlpha * (0.7f + 0.3f * pulse));
+        haloSr.color = new Color(gc.r, gc.g, gc.b, k * (0.35f + 0.35f * pulse));
+    }
+ 
+    void HideGlow()
+    {
+        if (overlayObj != null)
+            overlayObj.SetActive(false);
+        if (haloObj != null)
+            haloObj.SetActive(false);
+    }
+ 
+    // A soft round halo, brightest in the middle, generated in code (1 unit across)
+    static Sprite GetHaloSprite()
+    {
+        if (haloSprite != null)
+            return haloSprite;
+        int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        float c = (size - 1) / 2f;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dist = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / (size / 2f);
+                float a = Mathf.Clamp01(1f - dist);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+            }
+        }
+        tex.Apply();
+        tex.filterMode = FilterMode.Bilinear;
+        haloSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+        return haloSprite;
+    }
+ 
+    // The explosion itself (used by the Activate key, X, and the fuse)
+    void Detonate()
+    {
+        if (detonated)
+            return;
+        detonated = true;
+        BirdTrail bombTrail = GetComponent<BirdTrail>();
+        if (bombTrail != null)
+            bombTrail.MarkAbility();
+        bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
+        bird.mouth.Play();
+        GetComponent<ExplosiveBehaviour>().Activate();
+        StartCoroutine("Activate");
+    }
+ 
     IEnumerator Activate()
     {
         Utility.CreateAnimation("Explosion", 15, transform.position, new Color32(255,255,255,255)).transform.localScale = 2 * Vector2.one;
+        BlastDamage.Apply(transform.position, blastRadius, blockDamage, pigDamage, gameObject);
         activated = true;
         GetComponent<CircleCollider2D>().enabled = false;
         GetComponent<CircleCollider2D>().enabled = true;
         yield return new WaitForSeconds(0.1f);
         activated = false;
+ 
+        if (vanishAfterExplosion)
+        {
+            bird.Vanish(2.5f);          // gone right away (the voice has time to finish); the glow is hidden with him
+        }
+        else
+        {
+            // reusable Bomb: back to normal
+            detonated = false;
+            fusing = false;
+            HideGlow();
+            if (sr != null)
+                sr.color = baseColor;
+        }
     }
+ 
     void OnTriggerStay2D(Collider2D c)
     {
         if (!activated)
@@ -698,6 +1349,7 @@ public class Bomb : MonoBehaviour
             return;
         Utility.DestroyWires(c.gameObject);
     }
+ 
     void OnTriggerEnter2D(Collider2D c)
     {
         if (!activated)
@@ -756,6 +1408,7 @@ public class Shockwave : MonoBehaviour
             sparks.Burst();
 		bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
         bird.mouth.Play();
+        SoundFX.PlayAt("shockwave.wav", transform.position, 1f);
  
         // Visual: reuses the existing "Explosion" sprite sheet, tinted electric blue
         Utility.CreateAnimation("Explosion", 15, transform.position, new Color32(120, 220, 255, 255)).transform.localScale = 2f * effectScale * Vector2.one;
@@ -980,6 +1633,9 @@ public class Terence : MonoBehaviour
     {
         bird = GetComponent<AngryBird>();
         bird.wireAction = AngryBird.WireAction.DestroyOnHighSpeed;
+        // No explosions at all: remove the explosive component so it can't go off on its own either
+        if (explosionSource != null)
+            Destroy(explosionSource);
     }
     void Update()
     {
@@ -996,22 +1652,6 @@ public class Terence : MonoBehaviour
         if (firTimeToStep && bird.mouth != null)
             bird.mouth.PlayOneShot(ModAPI2.LoadSound("AudioClip/Terence_ability1.wav"));
         firTimeToStep = false;
-        if (bird.rb.velocity.magnitude < 10)
-            return;
-        if (c.gameObject.CompareTag("Player"))
-            return;
-        if (c.gameObject.layer != 11)
-        {
-            if (c.gameObject.GetComponent<DestroyableBehaviour>() == null && c.gameObject.GetComponent<LimbBehaviour>() == null && c.gameObject.tag != "Player" && !c.gameObject.GetComponent<DebrisComponent>())
-            {
-                Destroy(c.gameObject);
-                ModAPI.CreateParticleEffect("Explosion", transform.position);
-            }
-        }
-        else
-        {
-            explosionSource.Activate();
-        }
     }
 }
 public class Tony : MonoBehaviour
@@ -1048,6 +1688,8 @@ public class Tony : MonoBehaviour
 public class Matilda : MonoBehaviour
 {
     AngryBird bird;
+    bool crumpled = false;
+    Sprite crumpledSprite;
     void Start()
     {
         bird = GetComponent<AngryBird>();
@@ -1055,6 +1697,10 @@ public class Matilda : MonoBehaviour
         {
             gameObject.AddComponent<UseEventTrigger>().Action = () =>
             {
+                crumpled = true;
+                crumpledSprite = ModAPI2.LoadSprite("MatildaCrumpled.png", 1f);
+                GetComponent<SpriteRenderer>().sprite = crumpledSprite;
+
                 bird.rb.velocity = new Vector2(bird.rb.velocity.x, 16);
                 bird.mouth.clip = bird.use[UnityEngine.Random.Range(1, 4)];
                 bird.mouth.Play();
@@ -1062,8 +1708,8 @@ public class Matilda : MonoBehaviour
                 e.transform.position = transform.position + new Vector3(0, -1f, 0);
                 e.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("Egg.png", 1.5f);
                 e.gameObject.AddComponent<ExplosiveBehaviour>();
-                e.gameObject.GetComponent<ExplosiveBehaviour>().Range = 16f;
-                e.gameObject.GetComponent<ExplosiveBehaviour>().FragmentForce = 30f;
+                e.gameObject.GetComponent<ExplosiveBehaviour>().Range = 18f;
+                e.gameObject.GetComponent<ExplosiveBehaviour>().FragmentForce = 34f;
                 e.gameObject.GetComponent<ExplosiveBehaviour>().ShotExplodeChance = -1f;
                 e.gameObject.GetComponent<ExplosiveBehaviour>().BurnPower = 0f;
                 e.gameObject.GetComponent<ExplosiveBehaviour>().ExplodesOnFragmentHit = false;
@@ -1074,6 +1720,17 @@ public class Matilda : MonoBehaviour
                 e.gameObject.GetComponent<ExplosiveBehaviour>().ArmOnUse = false;
                 e.GetComponent<Rigidbody2D>().velocity = 6 * -Vector2.up;
             };
+        }
+    }
+    // The bird script swaps the sprite back after stuns (Idle/RecoverSprite),
+    // so this keeps the crumpled one on.
+    void LateUpdate()
+    {
+        if (crumpled && crumpledSprite != null)
+        {
+            SpriteRenderer sr = GetComponent<SpriteRenderer>();
+            if (sr.sprite != crumpledSprite)
+                sr.sprite = crumpledSprite;
         }
     }
 }
@@ -1120,7 +1777,7 @@ public class Hal : MonoBehaviour
     }
     void Reset()
     {
-        bird.rb.mass = 2;
+        bird.rb.mass = bird.mass;
     }
 }
 public class Bubbles : MonoBehaviour
@@ -1161,12 +1818,9 @@ public class Bubbles : MonoBehaviour
                     phase = 3;
                 break;
             case 3:
-                ModAPI.CreateParticleEffect("BigExplosion", transform.position);
+                ModAPI.CreateParticleEffect("BigExplosion", transform.position);   // the same explosion, still with no force
                 phase = 0;
-                transform.localScale = Vector2.one;
-                bird.isTerence = false;
-                GetComponent<SpriteRenderer>().sprite = bird.sprite[0];
-                bird.rb.mass = 1;
+                Destroy(gameObject);                                              // and he is gone
                 break;
         }
     }
@@ -1279,17 +1933,54 @@ public class Icebird : MonoBehaviour
 {
     PhysicalBehaviour phy;
     AngryBird bird;
-    float timer = -1;
+    SpriteRenderer sr;
+ 
+    // Fuse: after a Slingshot X shot hits something, he slowly turns icy blue, then uses his ability and disappears
+    public float fuseTime = 2.5f;                                     // seconds from the hit to the ability
+    public Color32 fuseColor = new Color32(120, 200, 255, 255);    // the colour he fades toward
+    public bool vanishAfterAbility = true;                          // he disappears the moment his ability goes off
+    public bool freezeOnTouch = true;                               // any block he touches turns to glass (not only when he uses his ability)
+    public float burstRadius = 4f;                                  // how far his ability's freezing burst reaches
+ 
+    bool fusing = false;
+    bool fuseFired = false;
+    bool used = false;
+    float fuseTimer = 0f;
+    Color baseColor = Color.white;
+ 
+    // What each wooden / stone / iron block turns into
+    static string[] woodNames = { "Wooden Block", "Wooden Stick", "Wooden Box", "Wooden Triangle", "Wooden Circle" };
+    static string[] stoneNames = { "Stone Block", "Stone Stick", "Stone Box", "Stone Triangle", "Stone Circle" };
+    static string[] ironNames = { "Iron Block", "Iron Stick", "Iron Box", "Iron Triangle", "Iron Circle" };
+    static string[] glassNames = { "Glass Block", "Glass Pole", "Glass Box", "Glass Triangle", "Glass Circle" };
+    static string[] glassSprites = { "glasspole.png", "glassstick.png", "glassbox.png", "glassilluminati.png", "glassrock.png" };
+    static float[] glassHp = { 7f, 7f, 7f, 7f, 14f };
+    static float[] glassMass = { 15f, 15f, 15f, 15f, 30f };
+ 
     void Start()
     {
         bird = GetComponent<AngryBird>();
+        sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+            baseColor = sr.color;
         gameObject.AddComponent<UseEventTrigger>().Action = () =>
         {
-            bird.Say(bird.use);
-            Activate();
+            UseAbility();
         };
         phy = GetComponent<PhysicalBehaviour>();
     }
+ 
+    void UseAbility()
+    {
+        if (used)
+            return;
+		BirdTrail iceTrail = GetComponent<BirdTrail>();
+        if (iceTrail != null)
+            iceTrail.MarkAbility();
+        bird.Say(bird.use);
+        Activate();
+    }
+ 
     void Activate()
     {
         GetComponent<AudioSource>().PlayOneShot(ModAPI2.LoadSound("AudioClip/icebird_voice_ability.wav"));
@@ -1302,79 +1993,264 @@ public class Icebird : MonoBehaviour
         color0.startColor = (Color)new Color32(0, 200, 240, 150);
         var color1 = particle.GetComponentsInChildren<ParticleSystem>()[4].main;
         color1.startColor = (Color)new Color32(0, 150, 200, 200);
-        timer = 0.1f;
-        CircleCollider2D triggerCollider;
-        triggerCollider = GetComponent<CircleCollider2D>();
-        triggerCollider.enabled = false;
-        triggerCollider.enabled = true;
+ 
+        // The freezing burst happens right now
+        FreezeBurst();
+ 
+        // ...and he is gone straight away (the cloud and his voice carry on without him)
+        if (vanishAfterAbility)
+        {
+            used = true;
+            bird.Vanish(3f);
+        }
     }
+ 
+    // Freezes everything close by
+    void FreezeBurst()
+    {
+        HashSet<GameObject> done = new HashSet<GameObject>();
+        Collider2D[] cols = Physics2D.OverlapCircleAll(transform.position, burstRadius + 1f);
+        foreach (Collider2D c in cols)
+        {
+            if (c == null)
+                continue;
+            GameObject go = c.gameObject;
+            if (go == gameObject || !done.Add(go))
+                continue;
+            if (Utility.Distance(c.transform.position, transform.position) > burstRadius)
+                continue;
+            if (go.layer == 11)
+                continue;
+            if (go.GetComponentInChildren<StellaBubble>() != null)
+                continue;
+ 
+            PhysicalBehaviour cphy = go.GetComponent<PhysicalBehaviour>();
+            if (cphy != null)
+                cphy.Temperature = -1000;
+            if (go.GetComponent<DamagableMachineryBehaviour>())
+                go.GetComponent<DamagableMachineryBehaviour>().Break(Vector2.zero);
+            FreezeBlock(go);
+        }
+    }
+ 
     void Update()
     {
-        if (timer > 0)
-            timer -= Time.deltaTime;
         phy.Temperature = -30;
-    }
-    void OnTriggerEnter2D(Collider2D c)
-    {
-        if (timer < 0)
+ 
+        if (used || bird == null || sr == null)
             return;
-        if (Utility.Distance(c.transform.position, transform.position) > 4)
-            return;
-        if (c.gameObject.layer == 11)
-            return;
-        if (c.gameObject.GetComponentInChildren<StellaBubble>() != null)
-            return;
-        c.gameObject.GetComponent<PhysicalBehaviour>().Temperature = -1000;
-        if (c.gameObject.GetComponent<DamagableMachineryBehaviour>())
-            c.gameObject.GetComponent<DamagableMachineryBehaviour>().Break(Vector2.zero);
-        if (c.gameObject.GetComponent<Block>())
+ 
+        bool shouldFuse = bird.shotFromSlingshot && bird.hasCollidedAfterShot;
+        if (shouldFuse && !fuseFired)
         {
-            if (c.gameObject.GetComponent<Block>().material == Block.Material.Glass)
+            if (!fusing)
+            {
+                fusing = true;
+                fuseTimer = 0f;
+                baseColor = sr.color;
+            }
+            fuseTimer += Time.deltaTime;
+            sr.color = Color.Lerp(baseColor, fuseColor, Mathf.Clamp01(fuseTimer / fuseTime));
+            if (fuseTimer >= fuseTime)
+            {
+                fuseFired = true;
+                fusing = false;
+                sr.color = baseColor;
+                UseAbility();
+            }
+        }
+        else if (!shouldFuse)
+        {
+            // caught by the slingshot again (or a fresh shot): reset the fuse
+            if (fusing)
+                sr.color = baseColor;
+            fusing = false;
+            fuseFired = false;
+        }
+    }
+ 
+    // Turns one wooden / stone / iron block into glass (glass is left alone)
+    void FreezeBlock(GameObject go)
+    {
+        Block blk = go.GetComponent<Block>();
+        if (blk == null)
+            return;
+        if (blk.material == Block.Material.Glass)
+            return;
+ 
+        for (int i = 0; i < glassNames.Length; i++)
+        {
+            if (go.name == woodNames[i] || go.name == stoneNames[i] || go.name == ironNames[i])
+            {
+                go.name = glassNames[i];
+                blk.hp = glassHp[i];
+                blk.fullHp = glassHp[i];
+                Rigidbody2D brb = go.GetComponent<Rigidbody2D>();
+                if (brb != null)
+                    brb.mass = glassMass[i];
+                go.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite(glassSprites[i]);
+                go.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("ice");
+                blk.material = Block.Material.Glass;
                 return;
-            GameObject block = c.gameObject;
-            SpawnableAsset asset = ModAPI.FindSpawnable("Glass Block");
-            if (block.name == "Wooden Block" || block.name == "Stone Block" || block.name == "Iron Block")
-            {
-                block.name = "Glass Block";
-                block.GetComponent<Block>().hp = 7;
-                block.GetComponent<Block>().fullHp = 7;
-                block.GetComponent<Block>().rb.mass = 15;
-                block.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("glasspole.png");
             }
-            if (block.name == "Wooden Stick" || block.name == "Stone Stick" || block.name == "Iron Stick")
+        }
+    }
+ 
+    // Touching a block (flying, rolling, resting on it...) turns it to glass
+    void OnCollisionEnter2D(Collision2D c)
+    {
+        if (freezeOnTouch)
+            FreezeBlock(c.gameObject);
+    }
+ 
+    void OnCollisionStay2D(Collision2D c)
+    {
+        if (freezeOnTouch)
+            FreezeBlock(c.gameObject);
+    }
+}
+public class Silver : MonoBehaviour
+{
+    AngryBird bird;
+    bool active = false;
+    bool hitSomething = false;
+    float activeTime = 0f;
+ 
+    // Tuning knobs
+    public float loopSpeed = 40f;           // how fast she flies around the loop
+    public float loopRadius = 2f;         // how big the loop is (small, but big enough to see). Bigger = a wider, longer loop
+    public float diveSpeed = 40f;           // how fast she dives straight down
+    public float diveMassMultiplier = 1.4f;   // heavier on the dive = hits harder
+    public float maxDiveTime = 4f;          // safety limit, in case she never hits anything
+    public float collisionGrace = 0.2f;    // seconds after activation in which touching something doesn't count
+    public bool facesRight = true;          // set to false if her sprite faces LEFT and she turns the wrong way
+    public Color32 featherColor = new Color32(210, 210, 225, 255);
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+ 
+        // Same guard the other birds use, so the ability isn't hooked up twice
+        if (!gameObject.GetComponent<TriggerEventBehaviour>())
+        {
+            gameObject.AddComponent<UseEventTrigger>().Action = () =>
             {
-                block.name = "Glass Pole";
-                block.GetComponent<Block>().hp = 7;
-                block.GetComponent<Block>().fullHp = 7;
-                block.GetComponent<Block>().rb.mass = 15;
-                block.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("glassstick.png");
-            }
-            if (block.name == "Wooden Box" || block.name == "Stone Box" || block.name == "Iron Box")
+                if (active)
+                    return;
+                BirdTrail trail = GetComponent<BirdTrail>();
+                if (trail != null)
+                    trail.MarkAbility();
+                StartCoroutine(LoopAndDive());
+            };
+        }
+    }
+ 
+    // The z angle that makes her face a direction (same idea as Mighty Feathers Red)
+    float AngleOf(Vector2 dir)
+    {
+        float a = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+        bool flipped = transform.localScale.x < 0f;
+        if (facesRight == flipped)
+            a += 180f;
+        return a;
+    }
+ 
+    void OnCollisionEnter2D(Collision2D c)
+    {
+        if (active && activeTime >= collisionGrace)
+            hitSomething = true;
+    }
+ 
+    // Says a random one of her ability voicelines (only the ones that exist)
+    void SayAbility()
+    {
+        if (bird == null || bird.mouth == null || bird.use == null)
+            return;
+        List<AudioClip> clips = new List<AudioClip>();
+        for (int i = 1; i < bird.use.Length && i <= 3; i++)
+            if (bird.use[i] != null)
+                clips.Add(bird.use[i]);
+        if (clips.Count == 0)
+            return;
+        bird.mouth.clip = clips[UnityEngine.Random.Range(0, clips.Count)];
+        bird.mouth.Play();
+    }
+ 
+    IEnumerator LoopAndDive()
+    {
+        active = true;
+        hitSomething = false;
+        activeTime = 0f;
+        bird.freeRotation = true;             // so the bird's own "point along the flight" rule doesn't fight the loop
+        bird.enableSelfBalancing = false;
+        float originalGravity = bird.rb.gravityScale;
+        float originalMass = bird.rb.mass;
+ 
+        try
+        {
+            bird.rb.gravityScale = 0f;        // no gravity: the loop stays round, the dive stays straight
+ 
+            // Which way is she going? (if she's standing still, the way she faces)
+            Vector2 dir = bird.rb.velocity;
+            if (dir.sqrMagnitude < 1f)
             {
-                block.name = "Glass Box";
-                block.GetComponent<Block>().hp = 7;
-                block.GetComponent<Block>().fullHp = 7;
-                block.GetComponent<Block>().rb.mass = 15;
-                block.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("glassbox.png");
+                bool faceRight = (transform.localScale.x >= 0f) == facesRight;
+                dir = faceRight ? Vector2.right : Vector2.left;
             }
-            if (block.name == "Wooden Triangle" || block.name == "Stone Triangle" || block.name == "Iron Triangle")
+            dir.Normalize();
+ 
+            SayAbility();
+            Utility.CreateFeatherEffect(featherColor, transform.position);
+ 
+            // ---- Phase 1: the loop ----
+            // Up and over: going right turns anticlockwise, going left turns clockwise.
+            // She turns a whole 360 degrees in whole physics steps, so the loop closes on itself.
+            float turn = dir.x >= 0f ? 1f : -1f;
+            float loopTime = 2f * Mathf.PI * loopRadius / Mathf.Max(0.1f, loopSpeed);
+            int steps = Mathf.Max(8, Mathf.RoundToInt(loopTime / Time.fixedDeltaTime));
+            float stepAngle = 360f / steps * turn;
+ 
+            for (int i = 0; i < steps && !hitSomething; i++)
             {
-                block.name = "Glass Triangle";
-                block.GetComponent<Block>().hp = 7;
-                block.GetComponent<Block>().fullHp = 7;
-                block.GetComponent<Block>().rb.mass = 15;
-                block.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("glassilluminati.png");
+                bird.rb.velocity = dir * loopSpeed;
+                bird.rb.angularVelocity = 0f;
+                bird.rb.rotation = AngleOf(dir);
+                dir = (Vector2)(Quaternion.Euler(0f, 0f, stepAngle) * dir);
+                activeTime += Time.fixedDeltaTime;
+                yield return new WaitForFixedUpdate();
             }
-            if (block.name == "Wooden Circle" || block.name == "Stone Circle" || block.name == "Iron Circle")
+ 
+            // ---- Phase 2: the dive, straight down, until she hits something ----
+            if (!hitSomething)
             {
-                block.name = "Glass Circle";
-                block.GetComponent<Block>().hp = 14;
-                block.GetComponent<Block>().fullHp = 14;
-                block.GetComponent<Block>().rb.mass = 30;
-                block.GetComponent<SpriteRenderer>().sprite = ModAPI2.LoadSprite("glassrock.png");
+                bird.wireAction = AngryBird.WireAction.DestroyOnHighSpeed;
+                bird.rb.mass = originalMass * diveMassMultiplier;
+                ModAPI.CreateParticleEffect("Flash", transform.position);
+				bird.rb.gravityScale = 1f;        
+ 
+                float flown = 0f;
+                while (!hitSomething && flown < maxDiveTime)
+                {
+                    bird.rb.velocity = Vector2.down * diveSpeed;
+                    bird.rb.angularVelocity = 0f;
+                    bird.rb.rotation = AngleOf(Vector2.down);
+                    flown += Time.fixedDeltaTime;
+                    activeTime += Time.fixedDeltaTime;
+                    yield return new WaitForFixedUpdate();
+                }
             }
-            block.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("ice");
-            block.GetComponent<Block>().material = Block.Material.Glass;
+        }
+        finally
+        {
+            // ---- Phase 3: back to normal (always, even if something interrupts the ability) ----
+            if (bird != null && bird.rb != null)
+            {
+                bird.rb.mass = originalMass;
+                bird.rb.gravityScale = originalGravity;
+            }
+            if (bird != null)
+                bird.freeRotation = false;
+            active = false;
         }
     }
 }
@@ -1424,6 +2300,7 @@ public class SpaceEgg : MonoBehaviour
         v.spin = vortexSpin;
         v.turns = vortexTurns;
         ModAPI.CreateParticleEffect("Flash", center);
+        Utility.CreateOneShotAudio(ModAPI2.LoadSound("AudioClip/warp.wav"), center, 2f);   // plays for up to 4 seconds (raise the 4f if warp.wav is longer)
  
         Renderer[] renderers = GetComponentsInChildren<Renderer>();
         bool hidden = false;
@@ -1485,6 +2362,54 @@ public class SpaceEgg : MonoBehaviour
             if (dist < gatherRadius)
                 rb.velocity = rb.velocity * (1f - gatherDamping);
         }
+    }
+}
+public class CanBird : MonoBehaviour
+{
+    AngryBird bird;
+    SpriteRenderer sr;
+    bool wrapped = false;
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+        sr = GetComponent<SpriteRenderer>();
+    }
+ 
+    void Update()
+    {
+        if (bird == null)
+            return;
+ 
+        // Once the can is activated, it must not "go idle and vanish" before the eagle arrives
+        if (!wrapped)
+        {
+            UseEventTrigger[] triggers = GetComponents<UseEventTrigger>();
+            if (triggers.Length > 0)
+            {
+                wrapped = true;
+                for (int i = 0; i < triggers.Length; i++)
+                {
+                    if (triggers[i].Action == null)
+                        continue;
+                    var original = triggers[i].Action;
+                    triggers[i].Action = () =>
+                    {
+                        bird.idleDespawnTime = float.MaxValue;
+                        original();
+                    };
+                }
+            }
+        }
+    }
+ 
+    void LateUpdate()
+    {
+        if (bird == null || sr == null)
+            return;
+        bird.enableSelfBalancing = false;                 // a can doesn't stand itself upright like a bird
+        if (bird.sprite[0] != null && sr.sprite != bird.sprite[0])
+            sr.sprite = bird.sprite[0];                   // never switch to the stunned picture
     }
 }
 public class MightyEagleCan : MonoBehaviour
@@ -1641,6 +2566,8 @@ public class EagleSwoop : MonoBehaviour
     {
         GameObject go = c.attachedRigidbody != null ? c.attachedRigidbody.gameObject : c.gameObject;
         if (go == null || !done.Add(go))
+            return;
+        if (go.GetComponent<GroundBlock>() != null)     // the ground can't be destroyed
             return;
  
         // The sardine can: the eagle takes it out as he passes
@@ -1933,6 +2860,8 @@ public class SpaceEagleFlight : MonoBehaviour
     // Same rules the Mighty Eagle uses to decide what he obliterates
     bool IsDestroyable(GameObject go, Collider2D c)
     {
+        if (go.GetComponent<GroundBlock>() != null)     // the ground can't be destroyed
+            return false;
         bool isPig = go.GetComponent<BadPig>() != null
                   || (go.GetComponent<ABcharacters>() != null && go.GetComponent<AngryBird>() == null);
         bool isBlock = go.GetComponent<Block>() != null;
@@ -1950,6 +2879,439 @@ public class SpaceEagleFlight : MonoBehaviour
         if (go.GetComponent<LimbBehaviour>() != null || go.GetComponent<DebrisComponent>() != null)   // people, debris
             return false;
         return true;
+    }
+}
+public class CustomBird : MonoBehaviour
+{
+    // The player's settings. They are public fields so they are kept when the bird is saved.
+    public int abilityIndex = 0;
+    public float customMass = 2f;
+    public float glass = 2f;
+    public float wood = 2f;
+    public float stone = 2f;
+    public bool noGravity = false;
+ 
+    // Tuning knobs
+    public float keepAliveSeconds = 10f;   // the eagle abilities keep the bird from idle-despawning for this long
+ 
+    // The numbered list. The order here must match the switch in AddAbility.
+    public static readonly string[] AbilityNames = {
+        "None (no ability)",        // 0
+        "Red",                      // 1
+        "Mighty Feathers Red",      // 2
+        "Telebird",                 // 3
+        "Homing Bird",              // 4
+        "Chuck",                    // 5
+        "Bomb",                     // 6
+        "Shockwave",                // 7
+        "The Blues",                // 8
+        "Terence",                  // 9
+        "Tony",                     // 10
+        "Matilda",                  // 11
+        "Hal",                      // 12
+        "The Bubbles",              // 13
+        "Stella",                   // 14
+        "Ice Bird",                 // 15
+        "Silver",                   // 16
+        "Space Egg",                // 17
+        "Mighty Eagle",             // 18
+        "Space Eagle",              // 19
+        "Super Red",                // 20
+        "Lazer Bird"                // 21
+    };
+ 
+    AngryBird bird;
+    SpaceFlight spaceFlight;
+    bool applying = false;
+    bool addedExplosive = false;
+    bool keepAlive = false;
+    float normalIdleDespawn = 4f;
+ 
+    void Start()
+    {
+        bird = GetComponent<AngryBird>();
+        if (bird == null)
+            return;
+        normalIdleDespawn = bird.idleDespawnTime;
+ 
+        // One SpaceFlight for the whole life of the bird. Super Red and Lazer Bird only add their own if there is none,
+        // so this is also what stops them from forcing zero gravity on the Custom Bird.
+        spaceFlight = GetComponent<SpaceFlight>();
+        if (spaceFlight == null)
+            spaceFlight = gameObject.AddComponent<SpaceFlight>();
+        ApplyGravityMode();
+        ApplyStats();
+        AddMenu();
+ 
+        // A copy of a bird (The Blues clone themselves) already has its trigger: leave it alone
+        if (GetComponent<UseEventTrigger>() == null)
+            StartCoroutine(ApplyAbility());
+    }
+ 
+    // ------------------------------------------------------------
+    // MENU
+    // ------------------------------------------------------------
+    void AddMenu()
+    {
+        PhysicalBehaviour p = GetComponent<PhysicalBehaviour>();
+        if (p == null)
+            return;
+ 
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomNext", "Custom: Next Ability", "Custom: Next Ability", () =>
+        {
+            SelectAbility(abilityIndex + 1);
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomPrevious", "Custom: Previous Ability", "Custom: Previous Ability", () =>
+        {
+            SelectAbility(abilityIndex - 1);
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomPick", "Custom: Pick Ability By Number", "Custom: Pick Ability By Number", () =>
+        {
+            Utils.OpenFloatInputDialog<CustomBird>((float)abilityIndex, this, (System.Action<CustomBird, float>)((t, v) => t.SelectAbility(Mathf.RoundToInt(v))), "Pick Ability By Number", string.Format("from {0} to {1} (use List Abilities to see them)", (object)0, (object)(AbilityNames.Length - 1)));
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomList", "Custom: List Abilities", "Custom: List Abilities", () =>
+        {
+            string all = "";
+            for (int i = 0; i < AbilityNames.Length; i++)
+                all += i + " " + AbilityNames[i] + (i < AbilityNames.Length - 1 ? ",  " : "");
+            ModAPI.Notify(all);
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomMass", "Custom: Set Mass", "Custom: Set Mass", () =>
+        {
+            Utils.OpenFloatInputDialog<CustomBird>(customMass, this, (System.Action<CustomBird, float>)((t, v) => t.SetMass(v)), "Set Mass", string.Format("from {0} to {1}", (object)0.1f, (object)5000f));
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomGlass", "Custom: Set Glass Strength", "Custom: Set Glass Strength", () =>
+        {
+            Utils.OpenFloatInputDialog<CustomBird>(glass, this, (System.Action<CustomBird, float>)((t, v) => t.SetGlass(v)), "Set Glass Strength", string.Format("from {0} to {1}", (object)0f, (object)1000f));
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomWood", "Custom: Set Wood Strength", "Custom: Set Wood Strength", () =>
+        {
+            Utils.OpenFloatInputDialog<CustomBird>(wood, this, (System.Action<CustomBird, float>)((t, v) => t.SetWood(v)), "Set Wood Strength", string.Format("from {0} to {1}", (object)0f, (object)1000f));
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomStone", "Custom: Set Stone Strength", "Custom: Set Stone Strength", () =>
+        {
+            Utils.OpenFloatInputDialog<CustomBird>(stone, this, (System.Action<CustomBird, float>)((t, v) => t.SetStone(v)), "Set Stone Strength", string.Format("from {0} to {1}", (object)0f, (object)1000f));
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomGravity", "Custom: Toggle No-Gravity Flight", "Custom: Toggle No-Gravity Flight", () =>
+        {
+            noGravity = !noGravity;
+            ApplyGravityMode();
+            if (noGravity)
+                ModAPI.Notify("No-gravity flight on (when shot from Slingshot X)");
+            else
+                ModAPI.Notify("No-gravity flight off");
+        }));
+        p.ContextMenuOptions.Buttons.Add(new ContextMenuButton("CustomShow", "Custom: Show Settings", "Custom: Show Settings", () =>
+        {
+            ModAPI.Notify("Ability: " + AbilityNames[abilityIndex] + "   Mass: " + customMass + "   Glass: " + glass + "   Wood: " + wood + "   Stone: " + stone + "   No gravity: " + noGravity);
+        }));
+    }
+ 
+    // ------------------------------------------------------------
+    // MASS, STRENGTHS, GRAVITY
+    // ------------------------------------------------------------
+    public void SetMass(float v)
+    {
+        customMass = Mathf.Clamp(v, 0.1f, 5000f);
+        ApplyMass();
+        ModAPI.Notify("Mass: " + customMass);
+    }
+ 
+    public void SetGlass(float v)
+    {
+        glass = Mathf.Clamp(v, 0f, 1000f);
+        ApplyStats();
+        ModAPI.Notify("Glass strength: " + glass);
+    }
+ 
+    public void SetWood(float v)
+    {
+        wood = Mathf.Clamp(v, 0f, 1000f);
+        ApplyStats();
+        ModAPI.Notify("Wood strength: " + wood);
+    }
+ 
+    public void SetStone(float v)
+    {
+        stone = Mathf.Clamp(v, 0f, 1000f);
+        ApplyStats();
+        ModAPI.Notify("Stone strength: " + stone);
+    }
+ 
+    void ApplyStats()
+    {
+        if (bird == null)
+            return;
+        bird.glassMultiplier = glass;
+        bird.woodMultiplier = wood;
+        bird.stoneMultiplier = stone;
+        ApplyMass();
+    }
+ 
+    void ApplyMass()
+    {
+        if (bird == null)
+            return;
+        PhysicalBehaviour p = GetComponent<PhysicalBehaviour>();
+        if (p != null)
+        {
+            p.InitialMass = customMass;
+            p.TrueInitialMass = customMass;
+        }
+        bird.mass = customMass;                                           // what the bird returns to after a hit
+        bird.gameMass = bird.isTerence ? customMass * 0.1f : customMass * 6f;   // the mass Slingshot X gives it when launched
+        if (!bird.shotFromSlingshot && bird.rb != null)
+            bird.rb.mass = customMass;                                    // not while it is flying: it keeps its flight mass
+    }
+ 
+    void ApplyGravityMode()
+    {
+        if (spaceFlight == null)
+            return;
+        spaceFlight.zeroGravityOnLaunch = noGravity;
+        // The Space birds disappear after drifting for a while. A normal-gravity bird shouldn't get those time limits.
+        spaceFlight.maxFlightTime = noGravity ? 15f : 100000f;
+        spaceFlight.despawnAfterHit = noGravity ? 6f : 100000f;
+    }
+ 
+    // ------------------------------------------------------------
+    // ABILITY
+    // ------------------------------------------------------------
+    public void SelectAbility(int index)
+    {
+        int n = AbilityNames.Length;
+        abilityIndex = ((index % n) + n) % n;
+        ModAPI.Notify("Ability: " + AbilityNames[abilityIndex]);
+        if (!applying)
+            StartCoroutine(ApplyAbility());
+    }
+ 
+    IEnumerator ApplyAbility()
+    {
+        applying = true;
+        while (true)
+        {
+            int index = abilityIndex;
+ 
+            RemoveAbility();
+            yield return null;               // the old scripts are really gone after this frame
+            AddAbility(index);
+ 
+            // Wait for the new ability to hook up its "use" trigger (Homing Bird and "None" have none)
+            if (index != 0 && index != 4)
+            {
+                float waited = 0f;
+                while (waited < 1f && GetComponent<UseEventTrigger>() == null)
+                {
+                    waited += Time.deltaTime;
+                    yield return null;
+                }
+            }
+            if (keepAlive)
+                WrapKeepAlive();
+ 
+            // Tell the bird script to put its "ability locked after a hit" check in front of the new trigger
+            if (bird != null)
+                bird.useGateInstalled = false;
+            yield return null;
+ 
+            if (index == abilityIndex)
+                break;                       // the player didn't change it again in the meantime
+        }
+        applying = false;
+    }
+ 
+    void Kill<T>() where T : Component
+    {
+        T[] found = GetComponents<T>();
+        for (int i = 0; i < found.Length; i++)
+            if (found[i] != null)
+                Destroy(found[i]);
+    }
+ 
+    void RemoveAbility()
+    {
+        Kill<UseEventTrigger>();
+        Kill<Red>();
+        Kill<MightyRed>();
+        Kill<Telebird>();
+        Kill<HomingBird>();
+        Kill<Chuck>();
+        Kill<Bomb>();
+        Kill<Shockwave>();
+        Kill<ShockwaveSparks>();
+        Kill<Blue>();
+        Kill<Terence>();
+        Kill<Tony>();
+        Kill<Matilda>();
+        Kill<Hal>();
+        Kill<Bubbles>();
+        Kill<Stella>();
+        Kill<Icebird>();
+        Kill<Silver>();
+        Kill<SpaceEgg>();
+        Kill<MightyEagleCan>();
+        Kill<SpaceEagleCan>();
+        Kill<SuperRed>();
+        Kill<LazerBird>();
+        if (addedExplosive)
+        {
+            Kill<ExplosiveBehaviour>();
+            addedExplosive = false;
+        }
+ 
+        // Things the old abilities left lying around
+        foreach (HomingField f in FindObjectsOfType<HomingField>())
+            if (f != null && f.owner == transform)
+                Destroy(f.gameObject);
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            Transform c = transform.GetChild(i);
+            if (c.name == "BombGlowOverlay" || c.name == "BombGlowHalo")
+                Destroy(c.gameObject);
+        }
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+            sr.color = Color.white;
+        if (bird != null)
+        {
+            bird.freeRotation = false;
+            bird.idleDespawnTime = normalIdleDespawn;
+        }
+        keepAlive = false;
+    }
+ 
+    void AddAbility(int index)
+    {
+        if (bird == null)
+            return;
+ 
+        // Red and "None" have no real ability (no ability cloud on the trail)
+        bird.noAbility = (index == 0 || index == 1);
+        // These abilities still work after the bird has hit something (same as the original birds)
+        bird.activeAfterCollide = (index == 6 || index == 7 || index == 13 || index == 18 || index == 19);
+        keepAlive = (index == 18 || index == 19);
+ 
+        switch (index)
+        {
+            case 0:
+                break;
+            case 1:
+                gameObject.AddComponent<Red>();
+                break;
+            case 2:
+                gameObject.AddComponent<MightyRed>();
+                break;
+            case 3:
+                gameObject.AddComponent<Telebird>();
+                break;
+            case 4:
+                gameObject.AddComponent<HomingBird>();
+                break;
+            case 5:
+                gameObject.AddComponent<Chuck>();
+                break;
+            case 6:
+                AddBomb();
+                break;
+            case 7:
+                gameObject.AddComponent<Shockwave>();
+                break;
+            case 8:
+                gameObject.AddComponent<Blue>();
+                break;
+            case 9:
+                gameObject.AddComponent<Terence>();
+                break;
+            case 10:
+                gameObject.AddComponent<Tony>();
+                break;
+            case 11:
+                gameObject.AddComponent<Matilda>();
+                break;
+            case 12:
+                gameObject.AddComponent<Hal>();
+                break;
+            case 13:
+                gameObject.AddComponent<Bubbles>();
+                break;
+            case 14:
+                gameObject.AddComponent<Stella>();
+                break;
+            case 15:
+                gameObject.AddComponent<Icebird>();
+                break;
+            case 16:
+                gameObject.AddComponent<Silver>();
+                break;
+            case 17:
+                gameObject.AddComponent<SpaceEgg>();
+                break;
+            case 18:
+                {
+                    MightyEagleCan m = gameObject.AddComponent<MightyEagleCan>();
+                    m.destroyCan = false;       // the eagle must not destroy the bird itself
+                }
+                break;
+            case 19:
+                {
+                    SpaceEagleCan s = gameObject.AddComponent<SpaceEagleCan>();
+                    s.destroyCan = false;
+                }
+                break;
+            case 20:
+                gameObject.AddComponent<SuperRed>();
+                break;
+            case 21:
+                gameObject.AddComponent<LazerBird>();
+                break;
+        }
+    }
+ 
+    // Bomb needs an ExplosiveBehaviour set up exactly like the Bomb registration does it
+    void AddBomb()
+    {
+        if (GetComponent<ExplosiveBehaviour>() == null)
+        {
+            ExplosiveBehaviour ex = gameObject.AddComponent<ExplosiveBehaviour>();
+            ex.Range = 24f;
+            ex.FragmentForce = 48f;
+            ex.ShotExplodeChance = -1f;
+            ex.BurnPower = 0f;
+            ex.ExplodesOnFragmentHit = false;
+            ex.CanExplodeMultipleTimes = true;
+            ex.BigExplosion = true;
+            ex.DestroyOnExplode = false;
+            ex.ArmOnUse = true;
+            ex.Delay = 0f;
+            ex.TemperatureLimit = float.MaxValue;
+            addedExplosive = true;
+        }
+        gameObject.AddComponent<Bomb>();
+    }
+ 
+    // The eagle abilities take a few seconds, so the bird must not "lie still and vanish" before the eagle arrives
+    // (same job the CanBird script does for the cans)
+    void WrapKeepAlive()
+    {
+        UseEventTrigger t = GetComponent<UseEventTrigger>();
+        if (t == null || t.Action == null)
+            return;
+        var original = t.Action;
+        t.Action = () =>
+        {
+            if (bird != null)
+                bird.idleDespawnTime = float.MaxValue;
+            CancelInvoke("RestoreIdleDespawn");
+            Invoke("RestoreIdleDespawn", keepAliveSeconds);
+            original();
+        };
+    }
+ 
+    void RestoreIdleDespawn()
+    {
+        if (bird != null)
+            bird.idleDespawnTime = normalIdleDespawn;
     }
 }
 public class IcedProp : MonoBehaviour
@@ -2115,6 +3477,22 @@ public class AngryBird : ABcharacters
     public bool isMouseOn = false, missingVoice = false;
     public float mass, gameMass, glassMultiplier = 1, woodMultiplier = 1, stoneMultiplier = 1;
     public PhysicalBehaviour phy;
+    // Despawn: a bird shot from Slingshot X disappears after lying (almost) still for a while
+    public bool shotFromSlingshot = false;
+    public float idleDespawnTime = 4f;     // seconds of lying still before it disappears
+    public float idleDespawnSpeed = 2f;  // slower than this counts as "not moving"
+    float stillTimer = 0f;
+	// Ability lock: after a bird shot from Slingshot X hits something, its ability stops working
+    public bool activeAfterCollide = false;   // true = the ability still works after hitting something
+    public bool noAbility = false;            // true for birds that have no real ability (Red): no ability cloud on the trail
+    public bool hasCollidedAfterShot = false;
+    [SkipSerialisation]
+    public bool useGateInstalled = false;
+    public bool AbilityLocked
+    {
+        get { return shotFromSlingshot && hasCollidedAfterShot && !activeAfterCollide; }
+    }
+    public bool freeRotation = false;         // true while an ability is rotating the bird itself (switches off the "point along the flight" rule)
     void Start()
     {
         if(!GetComponent<ABcharacters>())
@@ -2194,11 +3572,21 @@ public class AngryBird : ABcharacters
             case "HomingBird":
                 personalColor = new Color32(0, 255, 0, 255);
                 break;
+           case "SuperRed":
+                personalColor = new Color32(255, 0, 0, 255);
+                break;
+                break;
             case "Chuck":
                 personalColor = new Color32(255, 255, 0, 255);
                 break;
+            case "LazerBird":
+                personalColor = new Color32(200, 100, 200, 255);
+                break;
             case "Bomb":
                 personalColor = new Color32(0, 0, 0, 255);
+                break;
+            case "SpaceBomb":
+                personalColor = new Color32(240, 140, 0, 255);
                 break;
             case "Shockwave":
                 personalColor = new Color32(0, 200, 255, 255);
@@ -2206,11 +3594,17 @@ public class AngryBird : ABcharacters
             case "Blues":
                 personalColor = new Color32(0, 200, 255, 255);
                 break;
+            case "LightningBird":
+                personalColor = new Color32(80, 200, 255, 255);
+                break;
             case "Matilda":
                 personalColor = new Color32(255, 255, 255, 255);
                 break;
             case "Terence":
                 personalColor = new Color32(200, 0, 0, 255);
+                break;
+            case "IncredibleTerence":
+                personalColor = new Color32(80, 200, 80, 255);
                 break;
             case "Tony":
                 personalColor = new Color32(0, 200, 255, 255);
@@ -2227,9 +3621,18 @@ public class AngryBird : ABcharacters
             case "Icebird":
                 personalColor = new Color32(0, 200, 255, 255);
                 break;
+            case "Silver":
+                personalColor = new Color32(138, 152, 163, 255);
+                break;
             case "SpaceEgg":
                 personalColor = new Color32(200, 255, 255, 255);
 				break;
+            case "idontknowitsname":
+                personalColor = new Color32(190, 190, 190, 255);
+                break;
+            case "CustomBird":
+                personalColor = new Color32(140, 140, 140, 255);
+                break;
             default:
                 personalColor = new Color32(0, 255, 255, 255);
                 break;
@@ -2247,6 +3650,8 @@ public class AngryBird : ABcharacters
     float rotZ;
     void Update()
     {
+        if (shotFromSlingshot)
+            enableSelfBalancing = false;
         Update1();
         if (AI)
         {
@@ -2270,6 +3675,46 @@ public class AngryBird : ABcharacters
             Idle();
         if (phy.Temperature > 200 && !isTerence)
             Die();
+        if (shotFromSlingshot && rb != null && rb.simulated)
+        {
+            if (rb.velocity.magnitude < idleDespawnSpeed)
+            {
+                stillTimer += Time.deltaTime;
+                if (stillTimer >= idleDespawnTime)
+                {
+                    stillTimer = 0f;
+                    Die();
+                }
+            }
+            else
+                stillTimer = 0f;
+        }
+        else
+            stillTimer = 0f;
+		// Put the ability lock in front of every "use" action this bird has (done once, after the ability scripts have set theirs up)
+        if (!useGateInstalled)
+        {
+            UseEventTrigger[] triggers = GetComponents<UseEventTrigger>();
+            for (int i = 0; i < triggers.Length; i++)
+            {
+                if (triggers[i].Action == null)
+                    continue;
+                var original = triggers[i].Action;
+                triggers[i].Action = () =>
+                {
+                    if (AbilityLocked)
+                    {
+                        ModAPI.Notify("<color=red>Ability locked: this bird already hit something.</color>");
+                        return;
+                    }
+                    original();
+					BirdTrail trail = GetComponent<BirdTrail>();
+                    if (trail != null && !noAbility)
+                        trail.MarkAbility();
+                };
+                useGateInstalled = true;
+            }
+        }
     }
     void Action_AI_BirdAbility()
     {
@@ -2305,10 +3750,24 @@ public class AngryBird : ABcharacters
             }
         }
     }
+	public void Vanish(float keepAlive)
+    {
+        Renderer[] rs = GetComponentsInChildren<Renderer>();
+        for (int i = 0; i < rs.Length; i++)
+            rs[i].enabled = false;
+        if (rb != null)
+        {
+            rb.velocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+            rb.simulated = false;
+        }
+        enabled = false;
+        Destroy(gameObject, keepAlive);
+    }
 
     void FixedUpdate()
     {
-        if (stat == Status.SlingFly)
+        if (stat == Status.SlingFly && !freeRotation)
         {
             rotZ = Mathf.Atan2(rb.velocity.y, rb.velocity.x) * Mathf.Rad2Deg;
             transform.rotation = Quaternion.Euler(0, 0, rotZ);
@@ -2316,6 +3775,8 @@ public class AngryBird : ABcharacters
     }
     void OnCollisionEnter2D(Collision2D c)
     {
+        if (shotFromSlingshot)
+            hasCollidedAfterShot = true;
         GameObject target = c.gameObject;
         if (stat == Status.SlingFly && !target.CompareTag("Player"))
         {
@@ -2404,7 +3865,7 @@ public class AngryBird : ABcharacters
             return;
         Utility.CreateFeatherEffect(personalColor, transform.position);
         Utility.CreateAnimation("Pop", 8, transform.position, personalColor);
-        //Utility.CreateOneShotAudio(ModAPI2.LoadSound("AudioClip/bird destroyed.ogg"), transform.position, 2);
+        Utility.CreateOneShotAudio(ModAPI2.LoadSound("AudioClip/bird_destroyed.wav"), transform.position, 2);
         Destroy(gameObject);
     }
     private void InitializeVoice()
@@ -2608,14 +4069,50 @@ public class BadPig : ABcharacters
         if (death && hp < 0)
         {
             Die();
-            ModAPI.CreateParticleEffect("BloodExplosion", transform.position).transform.localScale = Vector3.one * 1.2f;
         }
         enableSelfBalancing = false;
     }
+    static AudioClip pigDieClip = null;
+    static bool pigDieWarned = false;
+ 
+    void PlayDeathSound()
+    {
+        if (pigDieClip == null)
+        {
+            AudioClip c = ModAPI2.LoadSound("AudioClip/pig_die.wav");
+            if (c != null && c.length > 0.01f)
+                pigDieClip = c;
+        }
+        if (pigDieClip == null)
+        {
+            if (!pigDieWarned)
+            {
+                pigDieWarned = true;
+                ModAPI.Notify("<color=red>pig_die.wav didn't load</color>");
+            }
+            return;
+        }
+ 
+        // The sound gets its own object with its own AudioSource, because the pig is destroyed right away and would cut it off
+        GameObject g = new GameObject("PigDieSound");
+        g.transform.position = transform.position;
+        AudioSource s = g.AddComponent<AudioSource>();
+        s.playOnAwake = false;
+        s.loop = false;
+        s.mute = false;
+        s.volume = 0.7f;
+        s.maxDistance = 100f;
+        s.rolloffMode = AudioRolloffMode.Linear;
+        s.spatialBlend = 1f;
+        s.PlayOneShot(pigDieClip);
+        Destroy(g, pigDieClip.length + 0.5f);
+    }
     void Die()
     {
-        Utility.CreateAnimation("Pop", 8, transform.position, new Color32(100, 255, 100, 255));
+        PlayDeathSound();
+		Utility.CreateAnimation("Pop", 8, transform.position, new Color32(100, 255, 100, 255));
         Utility.CreateImage(ModAPI2.LoadSprite("5000.png"), transform.position + new Vector3(0, 1.5f));
+		ModAPI2.LoadSound("AudioClip/pig_die.wav");
         Destroy(gameObject);
     }
     void Idle()
@@ -2709,6 +4206,115 @@ public class ElPorkador : MonoBehaviour
             bird.rb.AddForce(Vector3.Normalize(bird.transform.position - transform.position) * 20, ForceMode2D.Impulse);
             bird.Stun(10);
         }
+    }
+}
+// Turns a BadPig into a boss: makes it bigger and gives it a floating health bar
+public class BossPig : MonoBehaviour
+{
+    public float sizeMultiplier = 1.8f;                                   // how much bigger than the normal pig
+    public float barHeight = 0.25f;                                       // thickness of the health bar (world units)
+    public float barMinWidth = 2.5f;                                      // narrowest the bar can be
+    public float barMaxWidth = 8f;                                        // widest the bar can be
+    public float barGap = 0.5f;                                           // gap between the top of the pig and the bar
+    public float barSmoothing = 4f;                                       // how quickly the bar slides to the new health (bigger = faster)
+ 
+    BadPig pig;
+    SpriteRenderer body;
+    GameObject barRoot;
+    Transform fill;
+    SpriteRenderer fillRenderer;
+    float width = 3f;
+    float shown = 1f;                                                     // the health fraction the bar currently shows
+    static Sprite whiteSprite = null;
+ 
+    void Start()
+    {
+        pig = GetComponent<BadPig>();
+        body = GetComponent<SpriteRenderer>();
+ 
+        // Bigger (the collider is made from the sprite, so it grows with the pig; the wound sprite is a child and grows too)
+        Vector3 s = transform.localScale;
+        transform.localScale = new Vector3(s.x * sizeMultiplier, s.y * sizeMultiplier, s.z);
+ 
+        BuildBar();
+    }
+ 
+    // A 1 x 1 white square whose left edge is its pivot, so scaling it horizontally fills the bar from the left
+    static Sprite GetWhiteSprite()
+    {
+        if (whiteSprite != null)
+            return whiteSprite;
+        Texture2D tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        tex.SetPixel(0, 0, Color.white);
+        tex.Apply();
+        whiteSprite = Sprite.Create(tex, new Rect(0f, 0f, 1f, 1f), new Vector2(0f, 0.5f), 1f);
+        return whiteSprite;
+    }
+ 
+    GameObject MakePart(string partName, Transform parent, Color color, int order)
+    {
+        GameObject g = new GameObject(partName);
+        g.transform.SetParent(parent, false);
+        SpriteRenderer sr = g.AddComponent<SpriteRenderer>();
+        sr.sprite = GetWhiteSprite();
+        sr.color = color;
+        sr.sortingOrder = order;
+        return g;
+    }
+ 
+    void BuildBar()
+    {
+        // Not a child of the pig, so it never tilts or stretches with it (it's removed in OnDestroy)
+        barRoot = new GameObject("BossHealthBar");
+        int baseOrder = body != null ? body.sortingOrder + 100 : 200;
+ 
+        width = Mathf.Clamp(body != null ? body.bounds.size.x : 3f, barMinWidth, barMaxWidth);
+        float border = 0.06f;
+ 
+        // Black border, dark red back, then the coloured fill on top
+        GameObject frame = MakePart("Frame", barRoot.transform, new Color(0f, 0f, 0f, 0.9f), baseOrder);
+        frame.transform.localPosition = new Vector3(-width * 0.5f - border, 0f, 0f);
+        frame.transform.localScale = new Vector3(width + border * 2f, barHeight + border * 2f, 1f);
+ 
+        GameObject back = MakePart("Back", barRoot.transform, new Color(0.25f, 0.05f, 0.05f, 1f), baseOrder + 1);
+        back.transform.localPosition = new Vector3(-width * 0.5f, 0f, 0f);
+        back.transform.localScale = new Vector3(width, barHeight, 1f);
+ 
+        GameObject f = MakePart("Fill", barRoot.transform, Color.green, baseOrder + 2);
+        f.transform.localPosition = new Vector3(-width * 0.5f, 0f, 0f);
+        f.transform.localScale = new Vector3(width, barHeight, 1f);
+        fill = f.transform;
+        fillRenderer = f.GetComponent<SpriteRenderer>();
+    }
+ 
+    void LateUpdate()
+    {
+        if (barRoot == null || pig == null || body == null)
+            return;
+ 
+        // Where the bar floats: above the top of the pig, never rotated
+        Bounds b = body.bounds;
+        barRoot.transform.position = new Vector3(b.center.x, b.max.y + barGap, transform.position.z);
+        barRoot.transform.rotation = Quaternion.identity;
+ 
+        float target = pig.fullhp > 0f ? Mathf.Clamp01(pig.hp / pig.fullhp) : 0f;
+        shown = Mathf.Lerp(shown, target, 1f - Mathf.Exp(-barSmoothing * Time.deltaTime));
+        if (Mathf.Abs(shown - target) < 0.001f)
+            shown = target;
+ 
+        fill.localScale = new Vector3(Mathf.Max(0.0001f, width * shown), barHeight, 1f);
+ 
+        // Green -> yellow -> red as the health runs out
+        Color c = shown > 0.5f
+            ? Color.Lerp(Color.yellow, Color.green, (shown - 0.5f) * 2f)
+            : Color.Lerp(Color.red, Color.yellow, shown * 2f);
+        fillRenderer.color = c;
+    }
+ 
+    void OnDestroy()
+    {
+        if (barRoot != null)
+            Destroy(barRoot);
     }
 }
 public class PlanetPig : MonoBehaviour
@@ -2828,7 +4434,6 @@ public class Slingshot : MonoBehaviour
     }
     void OnCollisionEnter2D(Collision2D c)
     {
-		ModAPI.Notify("Slingshot touched: " + c.gameObject.name + " | AngryBird: " + (c.gameObject.GetComponent<AngryBird>() != null));
 		if (bird != null)
             return;
         if (c.gameObject.GetComponent<AngryBird>())
@@ -2925,28 +4530,47 @@ public class Slingshot : MonoBehaviour
 }
 public class SlingshotX : MonoBehaviour
 {
-    // ---- Aiming ----
-    public bool aimWithMouse = true;     // true = shoot toward the mouse; false = fixed launchAngle
-    public float launchSpeed = 30f;      // every bird leaves at exactly this speed
-    public float launchAngle = 45f;      // only used when aimWithMouse is false (degrees, in the slingshot's own space)
-    public bool showGuide = true;        // dotted flight path while a bird is in the cup
-    public int guideDots = 24;
-    public float guideStep = 0.02f;      // seconds of flight between dots (bigger = longer guide)
+    // ---- Pulling back ----
+    public float maxPull = 3f;            // how far the bird can be pulled back (world units)
+    public float minPull = 0.4f;          // pull less than this and letting go just cancels the shot
+    public float grabRadius = 2f;       // click this close to the ready bird to grab it
+    public float launchSpeed = 30f;       // speed at a full pull; every bird gets the same speed for the same pull
+    public float minSpeedFraction = 0.2f; // even a small pull launches at least this fraction of launchSpeed
+    public bool rotateWhilePulling = true;// the bird turns to face where it will fly (his sprite is assumed to face right)
+    public bool activateLaunches = false; // true: the Activate key also fires straight along launchAngle at full speed
+    public float launchAngle = 45f;       // only used when activateLaunches is true (degrees, in the slingshot's own space)
+    public bool showGuide = true;         // dotted flight path while you're pulling
+    public int guideDots = 8;
+    public float guideStep = 0.04f;       // seconds of flight between dots (bigger = longer guide)
+    public float guideLengthMultiplier = 1f;               // how many times more dots the guide has (the Sling Scope sets this)
+    public Color guideColor = Color.white;                 // colour of the guide dots (the Sling Scope turns it red)
+    Color dotsBuiltColor = Color.white;                    // (remembers what the current dots were built with)
  
-    // ---- Where the ready bird sits (in the slingshot's own space; mirrors if the slingshot is flipped) ----
-    public Vector2 cupOffset = new Vector2(0f, 0.5f);       // the bird that's ready to fire
-    public int maxQueued = 27;            // how many can wait on the ground (so 28 birds in total, counting the cup)
+    // ---- Sounds ----
+    public float stretchVolume = 0.1f;    // the looping "slingshot_stretch_hard.wav" while pulling
+    public float fireVolume = 0.3f;       // "slingshot_fire.wav" on release
+ 
+    // ---- Where birds sit (in the slingshot's own space; mirrors if the slingshot is flipped) ----
+    public Vector2 cupOffset = new Vector2(0f, 0f);       // the bird that's ready to fire
+    public int maxQueued = 7;            // how many can wait on the ground (so 8 birds in total, counting the cup)
     public float maxWaitDistance = 28f;  // a waiting bird that gets knocked/walks further away than this is forgotten
  
     // ---- Reloading ----
     public float reloadDelay = 1.5f;     // seconds after a shot before the next bird hops on
     public float hopTime = 0.7f;        // how long a hop takes
     public float hopHeight = 2f;       // how high a hop arcs
+	
+    // ---- Waiting birds fidget ----
+    public bool idleTricks = true;        // waiting birds jump now and then
+    public float idleJumpMin = 4f;        // seconds between one bird's jumps: random between these
+    public float idleJumpMax = 14f;
+    public float idleJumpSpeed = 4f;      // how high they jump
+    public float idleSpinChance = 0.2f;  // chance that a jump is a flip (a full spin in the air)
+    public float hopSpinChance = 0.4f;    // chance that the hop into the cup is a spin
  
     // ---- Misc ----
     public bool activateOnce = true;     // X uses the last shot bird's power once
     public float catchDistance = 0.1f;   // how close a bird must be to the slingshot's body to be caught
-    public float aimDeadZone = 1.5f;     // cursor closer than this to the cup = keep the last aim (so clicking the slingshot doesn't aim at it)
  
     // The bird that's in the cup (or hopping into it)
     class Rec
@@ -2956,33 +4580,129 @@ public class SlingshotX : MonoBehaviour
         public Vector2 from;      // where its current hop started
         public Vector2 target;    // where it's heading
         public float t = 1f;      // hop progress, 0..1 (1 = arrived)
+        public float spinTurns = 0f;   // spins during the hop into the cup: 0 = none, 1 / -1 = one full turn either way
     }
  
     Rec cup = null;
     // Waiting birds are NOT frozen: they stay on the ground as normal physics objects
     List<AngryBird> waiting = new List<AngryBird>();
+    Dictionary<AngryBird, float> nextIdleJump = new Dictionary<AngryBird, float>();
     Dictionary<AngryBird, float> blockedUntil = new Dictionary<AngryBird, float>();   // so a just-shot bird isn't re-caught
     AngryBird lastShot = null;
     bool lastShotUsed = false;
     float reloadTimer = 0f;
     float scanTimer = 0f;
     bool hinted = false;
-    Vector2 lastAim = Vector2.right;
-    bool hasAim = false;
+ 
+    // Pulling
+    bool pulling = false;
+    Vector2 pull = Vector2.zero;          // from the cup toward where the bird is being held (world units)
+    RigidbodyType2D savedBodyType = RigidbodyType2D.Dynamic;
+ 
+    // Sounds
+    AudioSource slingSound = null;
+    AudioClip stretchClip = null;
+    AudioClip fireClip = null;
  
     GameObject[] dots = null;
     static Sprite dotSprite = null;
+	
+    // Loads a clip and makes sure it really loaded (a missing/broken file gives null or a zero-length clip)
+    static AudioClip LoadClip(string file)
+    {
+        AudioClip c = ModAPI2.LoadSound("AudioClip/" + file);
+        if (c != null && c.length > 0.01f)
+            return c;
+        return null;
+    }
+	
+    // Every waiting bird jumps at its own random times; sometimes the jump is a flip
+    void UpdateIdleTricks()
+    {
+        if (!idleTricks)
+            return;
+ 
+        foreach (AngryBird b in waiting)
+        {
+            if (b == null)
+                continue;
+ 
+            float next = 0f;
+            if (!nextIdleJump.TryGetValue(b, out next))
+            {
+                nextIdleJump[b] = Time.time + UnityEngine.Random.Range(idleJumpMin, idleJumpMax);
+                continue;
+            }
+            if (Time.time < next)
+                continue;
+            nextIdleJump[b] = Time.time + UnityEngine.Random.Range(idleJumpMin, idleJumpMax);
+ 
+            // only a calm bird that's standing still on the ground
+            Rigidbody2D rb = b.GetComponent<Rigidbody2D>();
+            if (rb == null || !rb.simulated || b.stat != AngryBird.Status.Idle)
+                continue;
+            if (Mathf.Abs(rb.velocity.y) > 0.3f || rb.velocity.magnitude > 2f)
+                continue;
+ 
+            StartCoroutine(IdleJump(b, rb, UnityEngine.Random.value < idleSpinChance));
+        }
+    }
+ 
+    IEnumerator IdleJump(AngryBird b, Rigidbody2D rb, bool spin)
+    {
+        float g = Mathf.Max(1f, -Physics2D.gravity.y * rb.gravityScale);
+        float airtime = 2f * idleJumpSpeed / g;
+ 
+        rb.velocity = new Vector2(rb.velocity.x + UnityEngine.Random.Range(-1.5f, 1.5f), idleJumpSpeed);
+        if (spin)
+        {
+            // one full turn over the time in the air; no stand-upright torque while he flips
+            float dir = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+            b.enableSelfBalancing = false;
+            rb.angularVelocity = dir * 360f / airtime;
+        }
+ 
+        yield return new WaitForSeconds(airtime + 0.15f);
+ 
+        if (b != null && spin && !b.shotFromSlingshot)
+            b.enableSelfBalancing = true;
+    }
+	
+    // The bird that's in the cup (or hopping into it), or null if there isn't one. Power ups use this.
+    public AngryBird CupBird
+    {
+        get { return cup != null ? cup.bird : null; }
+    }
  
     void Start()
     {
-        // Launch = the normal Activate/Use key while the slingshot is selected
+        // The Activate key (only fires if activateLaunches is on)
         if (!gameObject.GetComponent<TriggerEventBehaviour>())
         {
             gameObject.AddComponent<UseEventTrigger>().Action = () =>
             {
-                LaunchCup();
+                if (activateLaunches)
+                    LaunchCup(FixedDirection(), launchSpeed);
             };
         }
+ 
+        // Sounds: same setup as the old Slingshot
+        if (GetComponent<AudioSourceTimeScaleBehaviour>() == null)
+            gameObject.AddComponent<AudioSourceTimeScaleBehaviour>();
+        slingSound = gameObject.AddComponent<AudioSource>();
+        slingSound.loop = true;
+        slingSound.playOnAwake = false;
+        slingSound.mute = false;
+        slingSound.volume = 1f;
+        slingSound.maxDistance = 100f;
+        slingSound.rolloffMode = AudioRolloffMode.Linear;
+        slingSound.spatialBlend = 1f;
+        stretchClip = LoadClip("slingshot_stretch_hard.wav");
+        fireClip = LoadClip("slingshot_fire.wav");
+        if (stretchClip == null)
+            ModAPI.Notify("<color=red>slingshot_stretch_hard.wav didn't load</color>");
+        if (fireClip == null)
+            ModAPI.Notify("<color=red>slingshot_fire.wav didn't load</color>");
     }
  
     // ------------------------------------------------------------
@@ -3097,6 +4817,11 @@ public class SlingshotX : MonoBehaviour
  
         // Just put it in line. It is NOT frozen: it keeps standing/rolling on the ground until it's its turn.
         waiting.Add(b);
+        b.shotFromSlingshot = false;             // a caught bird is no longer "shot" (no idle despawn while it waits)
+        b.hasCollidedAfterShot = false;
+        BirdTrail oldTrail = b.GetComponent<BirdTrail>();
+        if (oldTrail != null)
+            oldTrail.Clear();
  
         // Draw the slingshot behind the birds
         SpriteRenderer body = GetComponent<SpriteRenderer>();
@@ -3149,12 +4874,16 @@ public class SlingshotX : MonoBehaviour
     }
  
     // ------------------------------------------------------------
-    // PLACING AND HOPPING THE CUP BIRD
+    // PLACING AND HOPPING THE CUP BIRD (or holding it where you've pulled it)
     // ------------------------------------------------------------
     void LateUpdate()
     {
         if (cup != null && cup.bird == null)
+        {
             cup = null;
+            if (pulling)
+                EndPull();
+        }
  
         for (int i = waiting.Count - 1; i >= 0; i--)
         {
@@ -3169,7 +4898,25 @@ public class SlingshotX : MonoBehaviour
                 waiting.RemoveAt(i);
         }
  
-        if (cup != null)
+        if (cup == null)
+            return;
+ 
+        if (pulling)
+        {
+            // The bird is held where you've pulled it
+            Vector2 anchor = (Vector2)transform.TransformPoint(cupOffset);
+            Vector2 p = anchor + pull;
+            cup.bird.transform.position = new Vector3(p.x, p.y, cup.bird.transform.position.z);
+            if (rotateWhilePulling && pull.sqrMagnitude > 0.01f)
+            {
+                float a = Mathf.Atan2(-pull.y, -pull.x) * Mathf.Rad2Deg;
+                cup.bird.transform.rotation = Quaternion.Euler(0f, 0f, a);
+            }
+            else
+                cup.bird.transform.rotation = transform.rotation;
+            cup.cur = (Vector2)transform.InverseTransformPoint(cup.bird.transform.position);
+        }
+        else
             MoveRec(cup, cupOffset);
     }
  
@@ -3181,6 +4928,8 @@ public class SlingshotX : MonoBehaviour
             r.from = r.cur;
             r.target = target;
             r.t = 0f;
+            // sometimes he spins on the way in
+            r.spinTurns = UnityEngine.Random.value < hopSpinChance ? (UnityEngine.Random.value < 0.5f ? -1f : 1f) : 0f;
         }
         if (r.t < 1f)
             r.t = Mathf.Min(1f, r.t + Time.deltaTime / Mathf.Max(0.01f, hopTime));
@@ -3189,52 +4938,178 @@ public class SlingshotX : MonoBehaviour
         r.cur = Vector2.Lerp(r.from, r.target, r.t);
         Vector3 world = transform.TransformPoint(r.cur + Vector2.up * arc);
         r.bird.transform.position = new Vector3(world.x, world.y, r.bird.transform.position.z);
-        r.bird.transform.rotation = transform.rotation;
+        float z = transform.eulerAngles.z + r.spinTurns * 360f * r.t;       // ends exactly upright, whatever the spin
+        r.bird.transform.rotation = Quaternion.Euler(0f, 0f, z);
     }
  
     // ------------------------------------------------------------
-    // AIMING
+    // PULLING BACK WITH THE MOUSE
     // ------------------------------------------------------------
-    Vector2 AimDirection()
+    Vector2 MouseWorld()
     {
-        Vector2 cupWorld = (Vector2)transform.TransformPoint(cupOffset);
-        if (aimWithMouse && Camera.main != null)
+        if (Camera.main == null)
+            return (Vector2)transform.position;
+        return (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
+    }
+ 
+    void HandlePull()
+    {
+        bool ready = cup != null && cup.bird != null && cup.t >= 1f;
+        Vector2 anchor = (Vector2)transform.TransformPoint(cupOffset);
+        Vector2 mouse = MouseWorld();
+ 
+        if (!pulling)
         {
-            Vector2 mouse = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            Vector2 d = mouse - cupWorld;
-            if (d.magnitude >= aimDeadZone)
-            {
-                lastAim = d.normalized;
-                hasAim = true;
-                return lastAim;
-            }
-            if (hasAim)
-                return lastAim;      // cursor is on/near the slingshot: keep the aim you had
+            // Click on the ready bird to grab it
+            if (ready && Input.GetMouseButtonDown(0) && Vector2.Distance(mouse, anchor) <= grabRadius)
+                BeginPull();
+            return;
         }
-        // Fixed angle in the slingshot's own space (rotate or flip the slingshot to re-aim)
+ 
+        if (!ready)
+        {
+            EndPull();
+            return;
+        }
+ 
+        // Follow the mouse, but only up to maxPull away from the cup
+        Vector2 p = mouse - anchor;
+        if (p.magnitude > maxPull)
+            p = p.normalized * maxPull;
+        pull = p;
+ 
+        // Let go: fire (or cancel if barely pulled)
+        if (Input.GetMouseButtonUp(0) || !Input.GetMouseButton(0))
+        {
+            if (pull.magnitude >= minPull)
+                FireFromPull();
+            else
+                CancelPull();
+        }
+    }
+ 
+    void BeginPull()
+    {
+        pulling = true;
+        pull = Vector2.zero;
+ 
+        // Stop the game's own mouse-dragging from yanking the slingshot around while you pull
+        Rigidbody2D srb = GetComponent<Rigidbody2D>();
+        if (srb != null)
+        {
+            savedBodyType = srb.bodyType;
+            srb.velocity = Vector2.zero;
+            srb.angularVelocity = 0f;
+            srb.bodyType = RigidbodyType2D.Kinematic;
+        }
+ 
+        // Sounds: the stretch loop, and the bird's own stretch voice once
+        if (slingSound != null && stretchClip != null)
+        {
+            slingSound.clip = stretchClip;
+            slingSound.volume = stretchVolume;
+            slingSound.loop = true;
+            slingSound.Play();
+        }
+        PlayStretchVoice(cup.bird);
+    }
+ 
+    // The bird's "_voice_stretch" / "_stretch_2" / "_stretch_3" clip (whichever files exist), once
+    void PlayStretchVoice(AngryBird b)
+    {
+        if (b == null || b.mouth == null || b.stretch == null)
+            return;
+        List<AudioClip> found = new List<AudioClip>();
+        for (int i = 1; i <= 3; i++)
+            if (b.stretch[i] != null)
+                found.Add(b.stretch[i]);
+        if (found.Count == 0)
+            return;
+        b.mouth.clip = found[UnityEngine.Random.Range(0, found.Count)];
+        b.mouth.Play();
+    }
+ 
+    // Stops the pulling state (sound, slingshot body); the bird itself is handled by the caller
+    void EndPull()
+    {
+        pulling = false;
+        if (slingSound != null)
+            slingSound.Stop();
+        Rigidbody2D srb = GetComponent<Rigidbody2D>();
+        if (srb != null && srb.bodyType == RigidbodyType2D.Kinematic)
+            srb.bodyType = savedBodyType;
+    }
+ 
+    // Let go without pulling far enough: the bird hops back into the cup
+    void CancelPull()
+    {
+        if (cup != null && cup.bird != null)
+        {
+            if (cup.bird.mouth != null)
+                cup.bird.mouth.Stop();
+            cup.from = cup.cur;     // hop back from where it's being held
+            cup.t = 0f;
+            cup.spinTurns = 0f;
+        }
+        EndPull();
+    }
+ 
+    void FireFromPull()
+    {
+        Vector2 dir = (-pull).normalized;                               // away from where you pulled
+        float fraction = Mathf.Clamp01(pull.magnitude / maxPull);
+        float speed = launchSpeed * Mathf.Max(minSpeedFraction, fraction);
+ 
+        EndPull();
+        if (slingSound != null && fireClip != null)
+        {
+            slingSound.volume = fireVolume;
+            slingSound.PlayOneShot(fireClip);
+        }
+        LaunchCup(dir, speed);
+    }
+ 
+    // The fixed launch direction (only used when activateLaunches is on)
+    Vector2 FixedDirection()
+    {
         float a = launchAngle * Mathf.Deg2Rad;
         return ((Vector2)transform.TransformVector(new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f))).normalized;
     }
  
-    // A dotted preview of the flight path (ignores obstacles)
+    // A dotted preview of the flight path while pulling (ignores obstacles)
     void UpdateGuide()
     {
-        bool show = showGuide && cup != null && cup.bird != null && cup.t >= 1f;
+        bool show = showGuide && pulling && cup != null && cup.bird != null && pull.magnitude >= minPull;
+ 
+        int wanted = Mathf.Max(1, Mathf.RoundToInt(guideDots * guideLengthMultiplier));
+ 
+        // Build the dots, or rebuild them if the length or colour changed (e.g. a Sling Scope was just added)
+        if (dots != null && (dots.Length != wanted || dotsBuiltColor != guideColor))
+        {
+            foreach (GameObject old in dots)
+                if (old != null)
+                    Destroy(old);
+            dots = null;
+        }
  
         if (dots == null)
         {
             if (!show)
                 return;
-            dots = new GameObject[guideDots];
+            dots = new GameObject[wanted];
+            dotsBuiltColor = guideColor;
             Sprite dot = GetDotSprite();
-            for (int i = 0; i < guideDots; i++)
+            for (int i = 0; i < wanted; i++)
             {
+                float f = wanted > 1 ? (float)i / (wanted - 1) : 0f;   // 0 at the slingshot, 1 at the far end
                 GameObject g = new GameObject("AimDot");
                 SpriteRenderer sr = g.AddComponent<SpriteRenderer>();
                 sr.sprite = dot;
                 sr.sortingOrder = 60;
-                sr.color = new Color(1f, 1f, 1f, Mathf.Max(0.15f, 0.9f - 0.05f * i));
-                g.transform.localScale = Vector3.one * Mathf.Max(0.4f, 1f - 0.04f * i);
+                Color c = guideColor;
+                c.a = Mathf.Lerp(0.9f, 0.55f, f);                      // same fade as before, spread over the whole length
+                sr.color = c;
+                g.transform.localScale = Vector3.one * Mathf.Lerp(1f, 0.72f, f);
                 dots[i] = g;
             }
         }
@@ -3247,10 +5122,15 @@ public class SlingshotX : MonoBehaviour
             return;
         }
  
-        Vector2 p0 = (Vector2)transform.TransformPoint(cupOffset);
-        Vector2 v = AimDirection() * launchSpeed;
+        Vector2 anchor = (Vector2)transform.TransformPoint(cupOffset);
+        Vector2 p0 = anchor + pull;                                     // where the bird is being held
+        float fraction = Mathf.Clamp01(pull.magnitude / maxPull);
+        Vector2 v = (-pull).normalized * (launchSpeed * Mathf.Max(minSpeedFraction, fraction));
         Rigidbody2D rb = cup.bird.GetComponent<Rigidbody2D>();
         Vector2 gravity = Physics2D.gravity * (rb != null ? rb.gravityScale : 1f);
+        SpaceFlight spaceFlight = cup.bird.GetComponent<SpaceFlight>();
+        if (spaceFlight != null && spaceFlight.zeroGravityOnLaunch)
+            gravity = Vector2.zero;                // Space birds fly straight, so the guide is a straight line
  
         for (int i = 0; i < dots.Length; i++)
         {
@@ -3289,7 +5169,7 @@ public class SlingshotX : MonoBehaviour
     // ------------------------------------------------------------
     // LAUNCHING
     // ------------------------------------------------------------
-    void LaunchCup()
+    void LaunchCup(Vector2 dir, float speed)
     {
         // Only fire a bird that has finished hopping into the cup
         if (cup == null || cup.bird == null || cup.t < 1f)
@@ -3300,7 +5180,9 @@ public class SlingshotX : MonoBehaviour
         if (rb == null)
             return;
  
-        Vector2 dir = AimDirection();
+        if (pulling)
+            EndPull();
+ 
         cup = null;
         reloadTimer = reloadDelay;          // the next bird hops on after this long
  
@@ -3310,10 +5192,13 @@ public class SlingshotX : MonoBehaviour
         rb.simulated = true;
         if (b.gameMass > 0f)
             rb.mass = b.gameMass;                 // the heavier "in flight" mass every bird normally has
-        rb.velocity = dir * launchSpeed;          // identical for every bird, whatever its mass
+        rb.velocity = dir * speed;
         rb.angularVelocity = 0f;
  
         b.stat = AngryBird.Status.SlingFly;
+        b.shotFromSlingshot = true;
+        b.hasCollidedAfterShot = false;       // a fresh shot unlocks the ability again
+        BirdTrail.Begin(b);
         b.Say(b.launch);
         if (b.isTerence)
         {
@@ -3350,13 +5235,10 @@ public class SlingshotX : MonoBehaviour
     }
  
     // ------------------------------------------------------------
-    // RELOADING + X
+    // RELOADING + PULLING + X
     // ------------------------------------------------------------
     void Update()
     {
-        if (InputSystem.Down("Slingshot X: launch"))
-            LaunchCup();
- 
         // Reload: once the delay has passed, the closest waiting bird hops into the empty cup
         if (reloadTimer > 0f)
             reloadTimer -= Time.deltaTime;
@@ -3367,6 +5249,8 @@ public class SlingshotX : MonoBehaviour
                 MoveToCup(next);
         }
  
+        UpdateIdleTricks();
+        HandlePull();
         UpdateGuide();
  
         // X = use the power of the last shot bird
@@ -3383,6 +5267,8 @@ public class SlingshotX : MonoBehaviour
     // If the slingshot is deleted, don't leave the cup bird frozen, and clean up the guide
     void OnDestroy()
     {
+        if (slingSound != null)
+            slingSound.Stop();
         if (cup != null && cup.bird != null)
         {
             Rigidbody2D rb = cup.bird.GetComponent<Rigidbody2D>();
@@ -3398,6 +5284,760 @@ public class SlingshotX : MonoBehaviour
         }
     }
 }
+// The Kingsling item: touches a Slingshot X -> upgrades it, then disappears
+public class Kingsling : MonoBehaviour
+{
+    public float speedMultiplier = 1.7f;                                  // launch speed after the upgrade (1.5 = 50% faster)
+    public Color32 glowColor = new Color32(255, 220, 40, 255);            // the slingshot's glow
+    public float soundVolume = 4f;                                        // how long (seconds) the sound is allowed to play
+ 
+    bool used = false;
+    float scanTimer = 0f;
+    float msgCooldown = 0f;
+ 
+    void OnCollisionEnter2D(Collision2D c)
+    {
+        TryUpgrade(c.collider);
+    }
+ 
+    void OnCollisionStay2D(Collision2D c)
+    {
+        TryUpgrade(c.collider);
+    }
+ 
+    void TryUpgrade(Collider2D col)
+    {
+        if (col == null || used)
+            return;
+        Rigidbody2D rb = col.attachedRigidbody;
+        SlingshotX s = rb != null ? rb.GetComponent<SlingshotX>() : col.GetComponent<SlingshotX>();
+        if (s != null)
+            Upgrade(s);
+    }
+ 
+    // Backup for when the collision callbacks don't fire: every 0.1s check if we're touching any Slingshot X
+    void FixedUpdate()
+    {
+        if (used)
+            return;
+        scanTimer -= Time.fixedDeltaTime;
+        if (scanTimer > 0f)
+            return;
+        scanTimer = 0.1f;
+ 
+        Collider2D mine = GetComponent<Collider2D>();
+        if (mine == null)
+            return;
+        SlingshotX[] slings = FindObjectsOfType<SlingshotX>();
+        foreach (SlingshotX s in slings)
+        {
+            if (s == null)
+                continue;
+            foreach (Collider2D c in s.GetComponents<Collider2D>())
+            {
+                if (c == null || c.isTrigger || !c.enabled)
+                    continue;
+                ColliderDistance2D d = mine.Distance(c);
+                if (d.isValid && (d.isOverlapped || d.distance < 0.1f))
+                {
+                    Upgrade(s);
+                    return;
+                }
+            }
+        }
+    }
+ 
+    void Update()
+    {
+        if (msgCooldown > 0f)
+            msgCooldown -= Time.deltaTime;
+    }
+ 
+    void Upgrade(SlingshotX s)
+    {
+        if (used)
+            return;
+ 
+        SlingshotPowerUps p = s.GetComponent<SlingshotPowerUps>();
+        if (p == null)
+            p = s.gameObject.AddComponent<SlingshotPowerUps>();
+ 
+        // Same power up twice doesn't stack: the item stays where it is
+        if (p.Has("Kingsling"))
+        {
+            if (msgCooldown <= 0f)
+            {
+                ModAPI.Notify("<color=yellow>This slingshot already has a Kingsling.</color>");
+                msgCooldown = 3f;
+            }
+            return;
+        }
+ 
+        used = true;
+        p.Add("Kingsling", glowColor);
+        s.launchSpeed *= speedMultiplier;
+ 
+        AudioClip clip = ModAPI2.LoadSound("AudioClip/kingsling.wav");
+        if (clip != null)
+            Utility.CreateOneShotAudio(clip, s.transform.position, soundVolume);
+        else
+            ModAPI.Notify("<color=red>kingsling.wav didn't load</color>");
+        ModAPI.CreateParticleEffect("Flash", s.transform.position);
+        ModAPI.Notify("<color=yellow>Kingsling! This slingshot launches birds faster now.</color>");
+ 
+        Destroy(gameObject);
+    }
+}
+// Base for power up items: touch a Slingshot X -> it's upgraded, plays kingsling.wav, the item is used up.
+// To make a new power up, derive from this and fill in the three things below.
+public abstract class PowerUpItem : MonoBehaviour
+{
+    protected abstract string PowerUpName { get; }                   // used to stop the same power up stacking on itself
+    protected abstract Color32 GlowColor { get; }                    // the slingshot's glow
+    protected abstract void Apply(SlingshotX s);                     // what the upgrade actually does
+ 
+    // Optional extras (the Kingsling and the Sling Scope don't need them)
+    protected virtual bool IsPermanent { get { return true; } }      // true = upgrades the slingshot (glow, can't be added twice); false = a one-off
+    protected virtual bool CanApply(SlingshotX s) { return true; }   // return false to refuse (use Say() to tell the player why)
+    protected virtual string SuccessMessage(SlingshotX s) { return PowerUpName + " added to the slingshot!"; }
+ 
+    public float soundVolume = 4f;                                   // how long (seconds) the sound is allowed to play
+ 
+    bool used = false;
+    float scanTimer = 0f;
+    float msgCooldown = 0f;
+ 
+    // A message that can't spam (at most one every 3 seconds)
+    protected void Say(string msg)
+    {
+        if (msgCooldown > 0f)
+            return;
+        ModAPI.Notify(msg);
+        msgCooldown = 3f;
+    }
+ 
+    void OnCollisionEnter2D(Collision2D c)
+    {
+        TryUpgrade(c.collider);
+    }
+ 
+    void OnCollisionStay2D(Collision2D c)
+    {
+        TryUpgrade(c.collider);
+    }
+ 
+    void TryUpgrade(Collider2D col)
+    {
+        if (col == null || used)
+            return;
+        Rigidbody2D rb = col.attachedRigidbody;
+        SlingshotX s = rb != null ? rb.GetComponent<SlingshotX>() : col.GetComponent<SlingshotX>();
+        if (s != null)
+            Upgrade(s);
+    }
+ 
+    // Backup for when the collision callbacks don't fire: every 0.1s check if we're touching any Slingshot X
+    void FixedUpdate()
+    {
+        if (used)
+            return;
+        scanTimer -= Time.fixedDeltaTime;
+        if (scanTimer > 0f)
+            return;
+        scanTimer = 0.1f;
+ 
+        Collider2D mine = GetComponent<Collider2D>();
+        if (mine == null)
+            return;
+        SlingshotX[] slings = FindObjectsOfType<SlingshotX>();
+        foreach (SlingshotX s in slings)
+        {
+            if (s == null)
+                continue;
+            foreach (Collider2D c in s.GetComponents<Collider2D>())
+            {
+                if (c == null || c.isTrigger || !c.enabled)
+                    continue;
+                ColliderDistance2D d = mine.Distance(c);
+                if (d.isValid && (d.isOverlapped || d.distance < 0.1f))
+                {
+                    Upgrade(s);
+                    return;
+                }
+            }
+        }
+    }
+ 
+    void Update()
+    {
+        if (msgCooldown > 0f)
+            msgCooldown -= Time.deltaTime;
+    }
+ 
+    void Upgrade(SlingshotX s)
+    {
+        if (used)
+            return;
+ 
+        SlingshotPowerUps p = null;
+        if (IsPermanent)
+        {
+            p = s.GetComponent<SlingshotPowerUps>();
+            if (p == null)
+                p = s.gameObject.AddComponent<SlingshotPowerUps>();
+ 
+            // The same power up twice doesn't stack: the item stays where it is
+            if (p.Has(PowerUpName))
+            {
+                Say("<color=yellow>This slingshot already has a " + PowerUpName + ".</color>");
+                return;
+            }
+        }
+ 
+        if (!CanApply(s))
+            return;
+ 
+        used = true;
+        if (IsPermanent)
+            p.Add(PowerUpName, GlowColor);
+        Apply(s);
+ 
+        AudioClip clip = ModAPI2.LoadSound("AudioClip/kingsling.wav");
+        if (clip != null)
+            Utility.CreateOneShotAudio(clip, s.transform.position, soundVolume);
+        else
+            ModAPI.Notify("<color=red>kingsling.wav didn't load</color>");
+        ModAPI.CreateParticleEffect("Flash", s.transform.position);
+        ModAPI.Notify("<color=yellow>" + SuccessMessage(s) + "</color>");
+ 
+        Destroy(gameObject);
+    }
+}
+ 
+// The Sling Scope item: a much longer, red aiming guide
+public class SlingScope : PowerUpItem
+{
+    public float lengthMultiplier = 14f;                                   // how many times longer the guide gets
+    public Color guideDotColor = new Color(1f, 0.80f, 0.80f, 1f);          // red dots
+    public Color32 glowColor = new Color32(255, 20, 20, 255);              // red glow
+ 
+    protected override string PowerUpName { get { return "Sling Scope"; } }
+    protected override Color32 GlowColor { get { return glowColor; } }
+ 
+    protected override void Apply(SlingshotX s)
+    {
+        s.guideLengthMultiplier = lengthMultiplier;
+        s.guideColor = guideDotColor;
+    }
+}
+
+// The Power Potion item: the bird on the slingshot drinks it and gets bigger and heavier
+public class PowerPotion : PowerUpItem
+{
+    public float sizeMultiplier = 1.4f;     // "slightly bigger"
+    public float massMultiplier = 2f;       // how many times heavier
+ 
+    protected override string PowerUpName { get { return "Power Potion"; } }
+    protected override Color32 GlowColor { get { return new Color32(190, 90, 255, 255); } }   // (not used: the potion gives the slingshot no glow)
+    protected override bool IsPermanent { get { return false; } }
+ 
+    protected override bool CanApply(SlingshotX s)
+    {
+        AngryBird b = s.CupBird;
+        if (b == null)
+        {
+            Say("<color=yellow>There's no bird on the slingshot to drink the Power Potion.</color>");
+            return false;
+        }
+        if (b.GetComponent<PowerPotionMark>() != null)
+        {
+            Say("<color=yellow>This bird already drank a Power Potion.</color>");
+            return false;
+        }
+        return true;
+    }
+ 
+    protected override void Apply(SlingshotX s)
+    {
+        AngryBird b = s.CupBird;
+        PowerPotionMark m = b.gameObject.AddComponent<PowerPotionMark>();
+        m.Boost(sizeMultiplier, massMultiplier);
+        ModAPI.CreateParticleEffect("Flash", b.transform.position);
+    }
+ 
+    protected override string SuccessMessage(SlingshotX s)
+    {
+        return "The bird drank the Power Potion!";
+    }
+}
+ 
+// Put on a bird that drank a Power Potion (also stops it drinking a second one)
+public class PowerPotionMark : MonoBehaviour
+{
+    public float growTime = 0.4f;     // seconds the bird takes to grow to its new size
+ 
+    public void Boost(float sizeMult, float massMult)
+    {
+        // Mass: the normal mass, the heavier "in flight" mass the slingshot uses, and what it weighs right now
+        AngryBird b = GetComponent<AngryBird>();
+        Rigidbody2D rb = GetComponent<Rigidbody2D>();
+        if (b != null)
+        {
+            b.mass *= massMult;
+            b.gameMass *= massMult;
+        }
+        if (rb != null)
+            rb.mass *= massMult;
+ 
+        StartCoroutine(Grow(sizeMult));
+    }
+ 
+    IEnumerator Grow(float mult)
+    {
+        Vector3 start = transform.localScale;
+        float ax = Mathf.Abs(start.x);
+        float ay = Mathf.Abs(start.y);
+ 
+        float t = 0f;
+        while (t < growTime)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Lerp(1f, mult, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / growTime)));
+            Vector3 s = transform.localScale;      // keep whichever way he's facing (the sign of the scale)
+            transform.localScale = new Vector3(Mathf.Sign(s.x) * ax * k, Mathf.Sign(s.y) * ay * k, s.z);
+            yield return null;
+        }
+    }
+}
+// The Birdquake item: activate it to start the earthquake
+public class Birdquake : MonoBehaviour
+{
+    public bool consumeItem = true;       // true = the item is used up; false = it stays and can be used again once the quake is over
+    public float soundVolume = 6f;        // how long (seconds) the sound is allowed to play
+ 
+    bool busy = false;
+ 
+    void Start()
+    {
+        if (!gameObject.GetComponent<TriggerEventBehaviour>())
+        {
+            gameObject.AddComponent<UseEventTrigger>().Action = () =>
+            {
+                if (busy)
+                    return;
+                StartQuake();
+            };
+        }
+    }
+ 
+    void StartQuake()
+    {
+        busy = true;
+ 
+        GameObject q = new GameObject("Birdquake");
+        BirdquakeRunner r = q.AddComponent<BirdquakeRunner>();
+        r.origin = transform.position;
+ 
+        AudioClip clip = ModAPI2.LoadSound("AudioClip/birdquake.wav");
+        if (clip == null || clip.length < 0.01f)
+            clip = ModAPI2.LoadSound("AudioClip/kingsling.wav");
+        if (clip != null)
+            Utility.CreateOneShotAudio(clip, transform.position, soundVolume);
+ 
+        if (consumeItem)
+        {
+            Destroy(gameObject);
+        }
+        else
+        {
+            r.onFinished = () => { busy = false; };
+        }
+    }
+}
+ 
+// The earthquake itself: shakes the screen and jostles every moving object for a few seconds
+public class BirdquakeRunner : MonoBehaviour
+{
+    // Tuning knobs
+    public float duration = 4f;           // total length of the quake (seconds)
+    public float rampUp = 0.8f;           // seconds it takes to build up
+    public float rampDown = 1.8f;         // seconds it takes to die away at the end
+    public float pulseInterval = 0.2f;   // how often everything gets jostled (seconds)
+    public float sideSpeed = 1f;        // sideways shove per jostle (random left/right, up to this much)
+    public float hopSpeed = 1f;           // little upward hop per jostle (only for things resting on the ground)
+    public float spinSpeed = 20f;         // random spin per jostle (degrees per second)
+    public float shakeStrength = 240f;    // screen shake (Terence uses 256; this is a "minor" one)
+ 
+    [System.NonSerialized]
+    public Vector3 origin;                // (just used as a fallback place for the screen shake)
+    [System.NonSerialized]
+    public System.Action onFinished = null;
+ 
+    float t = 0f;
+    float pulseTimer = 0f;
+ 
+    // 0..1: builds up, holds, then fades out
+    float Envelope()
+    {
+        float e = 1f;
+        if (t < rampUp)
+            e = t / rampUp;
+        float left = duration - t;
+        if (left < rampDown)
+            e = Mathf.Min(e, left / rampDown);
+        return Mathf.Clamp01(e);
+    }
+ 
+    void Update()
+    {
+        t += Time.deltaTime;
+ 
+        // The screen rumbles (aimed at the camera so it shakes fully wherever the item was)
+        if (CameraShakeBehaviour.main != null)
+        {
+            Vector3 camPos = Camera.main != null ? Camera.main.transform.position : origin;
+            CameraShakeBehaviour.main.Shake(shakeStrength * Envelope(), camPos);
+        }
+ 
+        if (t >= duration)
+        {
+            if (onFinished != null)
+                onFinished();
+            Destroy(gameObject);
+        }
+    }
+ 
+    void FixedUpdate()
+    {
+        pulseTimer -= Time.fixedDeltaTime;
+        if (pulseTimer > 0f)
+            return;
+        pulseTimer = pulseInterval;
+ 
+        float env = Envelope();
+        if (env <= 0f)
+            return;
+ 
+        Rigidbody2D[] all = FindObjectsOfType<Rigidbody2D>();
+        foreach (Rigidbody2D rb in all)
+        {
+            // Only things that can actually move (the ground, map blocks and frozen things stay put)
+            if (rb == null || !rb.simulated || rb.bodyType != RigidbodyType2D.Dynamic)
+                continue;
+ 
+            Vector2 v = rb.velocity;
+            v.x += UnityEngine.Random.Range(-1f, 1f) * sideSpeed * env;
+            if (Mathf.Abs(v.y) < 1.5f)       // a hop only for things that aren't already flying or falling
+                v.y += UnityEngine.Random.Range(0f, 1f) * hopSpeed * env;
+            rb.velocity = v;
+            rb.angularVelocity += UnityEngine.Random.Range(-1f, 1f) * spinSpeed * env;
+            rb.WakeUp();
+        }
+    }
+}
+// Sits on a Slingshot X and remembers which power ups it has; draws one soft pulsing glow per power up
+public class SlingshotPowerUps : MonoBehaviour
+{
+    class Glow
+    {
+        public GameObject go;
+        public SpriteRenderer sr;
+        public Color color;
+        public int index;
+    }
+ 
+    public float glowSizeFactor = 1.8f;    // glow size compared to the slingshot's picture
+    public float glowStep = 0.35f;         // extra size for each additional power up, so stacked glows show side by side
+    public float pulseSpeed = 3f;
+    public float minAlpha = 0.35f;
+    public float maxAlpha = 0.75f;
+ 
+    Dictionary<string, Glow> glows = new Dictionary<string, Glow>();
+    SpriteRenderer body;
+    static Sprite glowSprite = null;
+ 
+    void Awake()
+    {
+        body = GetComponent<SpriteRenderer>();
+    }
+ 
+    public bool Has(string powerUp)
+    {
+        return glows.ContainsKey(powerUp);
+    }
+ 
+    // Returns false (and does nothing) if the slingshot already has it
+    public bool Add(string powerUp, Color32 color)
+    {
+        if (glows.ContainsKey(powerUp))
+            return false;
+ 
+        Glow g = new Glow();
+        g.go = new GameObject("PowerUpGlow_" + powerUp);
+        g.sr = g.go.AddComponent<SpriteRenderer>();
+        g.sr.sprite = GetGlowSprite();
+        g.color = color;
+        g.index = glows.Count;
+        if (body != null)
+        {
+            g.sr.sortingLayerID = body.sortingLayerID;
+            g.sr.sortingOrder = body.sortingOrder - 1 - g.index;   // behind the slingshot
+        }
+        glows[powerUp] = g;
+        return true;
+    }
+ 
+    void LateUpdate()
+    {
+        if (body == null)
+            return;
+        Bounds b = body.bounds;
+        float baseSize = Mathf.Max(b.size.x, b.size.y);
+        foreach (Glow g in glows.Values)
+        {
+            if (g.go == null)
+                continue;
+            float size = baseSize * glowSizeFactor + g.index * glowStep;
+            g.go.transform.position = new Vector3(b.center.x, b.center.y, transform.position.z);
+            g.go.transform.rotation = Quaternion.identity;
+            g.go.transform.localScale = new Vector3(size, size, 1f);
+ 
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * pulseSpeed + g.index);
+            Color c = g.color;
+            c.a = Mathf.Lerp(minAlpha, maxAlpha, pulse);
+            g.sr.color = c;
+        }
+    }
+ 
+    void OnDestroy()
+    {
+        foreach (Glow g in glows.Values)
+            if (g.go != null)
+                Destroy(g.go);
+    }
+ 
+    // A soft round blob (white, fades toward the edge), generated in code so no extra image is needed
+    static Sprite GetGlowSprite()
+    {
+        if (glowSprite != null)
+            return glowSprite;
+        int n = 64;
+        Texture2D tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+        float r = n * 0.5f;
+        for (int y = 0; y < n; y++)
+        {
+            for (int x = 0; x < n; x++)
+            {
+                float d = Mathf.Sqrt((x + 0.5f - r) * (x + 0.5f - r) + (y + 0.5f - r) * (y + 0.5f - r)) / r;
+                float a = Mathf.Clamp01(1f - d);
+                a = a * a;
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+        }
+        tex.Apply();
+        glowSprite = Sprite.Create(tex, new Rect(0f, 0f, n, n), new Vector2(0.5f, 0.5f), n);   // 1 world unit wide
+        return glowSprite;
+    }
+}
+public class BirdTrail : MonoBehaviour
+{
+    // Knobs
+    public float dotSpacing = 0.7f;       // distance between trail dots
+    public float dotScale = 0.8f;         // dot size
+    public Color dotColor = new Color(1f, 1f, 1f, 0.7f);
+    public float cloudScale = 1.2f;       // size of the ability cloud
+    public Color cloudColor = new Color(1f, 1f, 1f, 0.8f);
+    public int maxDots = 4000;             // oldest dots are removed past this
+ 
+    AngryBird bird;
+    GameObject holder;                    // every dot and cloud lives under this, so one Destroy removes the whole trail
+    List<GameObject> dots = new List<GameObject>();
+    List<Transform> clouds = new List<Transform>();
+    List<float> cloudBorn = new List<float>();
+    bool tracking = false;
+    Vector2 lastPos;
+    float lastMarkTime = -10f;
+ 
+    static Sprite dotSprite = null;
+    static Sprite cloudSprite = null;
+ 
+    // Called by SlingshotX when a bird is launched: starts a fresh trail
+    public static void Begin(AngryBird b)
+    {
+        BirdTrail t = b.GetComponent<BirdTrail>();
+        if (t == null)
+            t = b.gameObject.AddComponent<BirdTrail>();
+        t.Restart();
+    }
+ 
+    void Restart()
+    {
+        bird = GetComponent<AngryBird>();
+        Clear();
+        holder = new GameObject("BirdTrail");
+        tracking = true;
+        lastPos = (Vector2)transform.position;
+    }
+ 
+    // Removes the whole trail
+    public void Clear()
+    {
+        if (holder != null)
+            Destroy(holder);
+        holder = null;
+        dots.Clear();
+        clouds.Clear();
+        cloudBorn.Clear();
+        tracking = false;
+    }
+ 
+    void OnDestroy()
+    {
+        Clear();
+    }
+ 
+    void Update()
+    {
+        if (holder == null)
+            return;
+ 
+        // The bird died / vanished (Vanish turns the AngryBird script off): the trail goes with it
+        if (bird == null || !bird.enabled)
+        {
+            Clear();
+            return;
+        }
+ 
+        // Leave a dot every dotSpacing along the flight, until the first thing it hits
+        if (tracking)
+        {
+            if (bird.hasCollidedAfterShot)
+            {
+                tracking = false;
+            }
+            else
+            {
+                Vector2 pos = (Vector2)transform.position;
+                float d = Vector2.Distance(pos, lastPos);
+                if (d > 12f)
+                {
+                    lastPos = pos;          // teleported: no dotted line across the gap
+                }
+                else
+                {
+                    while (d >= dotSpacing)
+                    {
+                        lastPos = Vector2.MoveTowards(lastPos, pos, dotSpacing);
+                        AddDot(lastPos);
+                        d = Vector2.Distance(pos, lastPos);
+                    }
+                }
+            }
+        }
+ 
+        // Ability clouds pop up to full size
+        for (int i = 0; i < clouds.Count; i++)
+        {
+            if (clouds[i] == null)
+                continue;
+            float k = Mathf.Clamp01((Time.time - cloudBorn[i]) / 0.2f);
+            clouds[i].localScale = Vector3.one * cloudScale * (0.3f + 0.7f * k);
+        }
+    }
+ 
+    // Marks where the bird's ability went off (called when the ability is used)
+    public void MarkAbility()
+    {
+        if (holder == null)
+            return;
+        if (Time.time - lastMarkTime < 0.3f)      // several code paths can report the same activation
+            return;
+        lastMarkTime = Time.time;
+ 
+        GameObject g = NewSprite("AbilityCloud", GetCloudSprite(), cloudColor, (Vector2)transform.position, 1);
+        g.transform.localScale = Vector3.one * cloudScale * 0.3f;
+        clouds.Add(g.transform);
+        cloudBorn.Add(Time.time);
+    }
+ 
+    void AddDot(Vector2 p)
+    {
+        GameObject g = NewSprite("TrailDot", GetDotSprite(), dotColor, p, 0);
+        g.transform.localScale = Vector3.one * dotScale;
+        dots.Add(g);
+        if (dots.Count > maxDots)
+        {
+            Destroy(dots[0]);
+            dots.RemoveAt(0);
+        }
+    }
+ 
+    GameObject NewSprite(string name, Sprite s, Color c, Vector2 p, int extraOrder)
+    {
+        GameObject g = new GameObject(name);
+        g.transform.SetParent(holder.transform, false);
+        g.transform.position = new Vector3(p.x, p.y, transform.position.z);
+        SpriteRenderer sr = g.AddComponent<SpriteRenderer>();
+        sr.sprite = s;
+        sr.color = c;
+        SpriteRenderer birdSr = GetComponent<SpriteRenderer>();
+        sr.sortingOrder = (birdSr != null ? birdSr.sortingOrder : 0) - 1 + extraOrder;   // just behind the bird (the cloud is a step in front of the dots)
+        return g;
+    }
+ 
+    // A small round dot, generated in code
+    static Sprite GetDotSprite()
+    {
+        if (dotSprite != null)
+            return dotSprite;
+        int size = 16;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        float c = (size - 1) / 2f;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dist = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01(size / 2f - dist)));
+            }
+        }
+        tex.Apply();
+        tex.filterMode = FilterMode.Bilinear;
+        dotSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        return dotSprite;
+    }
+ 
+    // A small puffy cloud (a few overlapping soft circles), generated in code, 1 unit across
+    static Sprite GetCloudSprite()
+    {
+        if (cloudSprite != null)
+            return cloudSprite;
+        int size = 64;
+        float[] cx = { 22f, 34f, 44f, 32f };
+        float[] cy = { 28f, 34f, 27f, 24f };
+        float[] cr = { 14f, 17f, 13f, 13f };
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float a = 0f;
+                for (int i = 0; i < cx.Length; i++)
+                {
+                    float dist = Mathf.Sqrt((x - cx[i]) * (x - cx[i]) + (y - cy[i]) * (y - cy[i]));
+                    a = Mathf.Max(a, Mathf.Clamp01((cr[i] - dist) / 3f));
+                }
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+        }
+        tex.Apply();
+        tex.filterMode = FilterMode.Bilinear;
+        cloudSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+        return cloudSprite;
+    }
+}
 public class Block : MonoBehaviour
 {
     public float hp, fullHp;
@@ -3410,6 +6050,11 @@ public class Block : MonoBehaviour
         Iron
     }
     public Material material;
+    public float sizeHpExponent = 0.7f;    // how strongly size changes health (0 = not at all, 0.5 = square root, 1 = fully proportional)
+    public float minSizeHpFactor = 0.2f;   // a tiny block never gets less than this share of its health
+    public float maxSizeHpFactor = 4f;     // a giant block never gets more than this many times its health
+    float baseFullHp;                      // health at normal size
+    Vector3 lastScale;                     // the size the health was last matched to
     public void Start()
     {
         GetComponent<DestroyableBehaviour>().OverallChance = -1;
@@ -3447,6 +6092,33 @@ public class Block : MonoBehaviour
             rb.mass *= 2;
         }
         hp = fullHp;
+        baseFullHp = fullHp;
+        lastScale = transform.localScale;
+        ApplySizeScaling();
+    }
+    void Update()
+    {
+        // Was the block resized? (a tiny tolerance so nothing triggers by accident)
+        if ((transform.localScale - lastScale).sqrMagnitude > 0.000001f)
+        {
+            lastScale = transform.localScale;
+            ApplySizeScaling();
+        }
+    }
+ 
+    // Matches the block's health to its current size, keeping how damaged it is
+    void ApplySizeScaling()
+    {
+        if (baseFullHp <= 0f)
+            return;
+ 
+        // Average of the two scales (a stick stretched in one direction counts as "somewhat bigger")
+        float size = (Mathf.Abs(transform.localScale.x) + Mathf.Abs(transform.localScale.y)) * 0.5f;
+        float factor = Mathf.Clamp(Mathf.Pow(Mathf.Max(size, 0.01f), sizeHpExponent), minSizeHpFactor, maxSizeHpFactor);
+ 
+        float damageTaken = fullHp > 0f ? Mathf.Clamp01(hp / fullHp) : 1f;   // 1 = undamaged, 0.5 = half health left
+        fullHp = baseFullHp * factor;
+        hp = fullHp * damageTaken;
     }
     void OnCollisionEnter2D(Collision2D c)
     {
@@ -3472,7 +6144,7 @@ public class Block : MonoBehaviour
             else TakeDamage(0.05f * Utility.Impact(rb, crb));
         }
     }
-    void TakeDamage(float damage)
+    public void TakeDamage(float damage)
     {
         hp -= damage;
         if (hp < fullHp * 0.5f)
@@ -3605,6 +6277,140 @@ public class Block : MonoBehaviour
             ironColor.startColor = (Color)new Color32(150, 160, 175, 200);
         }
         Destroy(gameObject);
+    }
+}
+// The Ground block: brown, fixed in place, indestructible
+public class GroundBlock : MonoBehaviour
+{
+    public bool frozenInPlace = true;      // true = doesn't move at all. false = still can't be destroyed, but can be dragged around.
+    public float maxTemperature = 30f;     // it never gets hotter than this (so fire can't burn it)
+ 
+    PhysicalBehaviour phy;
+    static Sprite sprite = null;
+    static float spriteSize = 0f;
+ 
+    // A brown square picture, drawn in code. "size" is how many world units wide the block is.
+    public static Sprite MakeSprite(float size)
+    {
+        if (sprite != null && Mathf.Approximately(spriteSize, size))
+            return sprite;
+ 
+        int n = 64;
+        Texture2D tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Point;
+ 
+        Color baseColor = new Color(0.45f, 0.30f, 0.16f, 1f);      // brown
+        Color darkColor = new Color(0.30f, 0.19f, 0.09f, 1f);       // darker brown for the speckles and the edge
+        for (int y = 0; y < n; y++)
+        {
+            for (int x = 0; x < n; x++)
+            {
+                float noise = Mathf.PerlinNoise(x * 0.35f + 11f, y * 0.35f + 7f);          // soft patches
+                float speck = Mathf.PerlinNoise(x * 1.7f + 3f, y * 1.7f + 19f);            // little dots
+                Color c = Color.Lerp(baseColor, darkColor, noise * 0.45f);
+                if (speck > 0.78f)
+                    c = Color.Lerp(c, darkColor, 0.7f);
+                bool edge = x < 2 || y < 2 || x >= n - 2 || y >= n - 2;
+                if (edge)
+                    c = Color.Lerp(c, darkColor, 0.65f);
+                tex.SetPixel(x, y, c);
+            }
+        }
+        tex.Apply();
+ 
+        spriteSize = size;
+        sprite = Sprite.Create(tex, new Rect(0f, 0f, n, n), new Vector2(0.5f, 0.5f), n / size);   // n pixels = "size" world units
+        return sprite;
+    }
+ 
+    void Start()
+    {
+        phy = GetComponent<PhysicalBehaviour>();
+ 
+        // Turn off the game's own break-on-impact, the same way your normal blocks do
+        DestroyableBehaviour d = GetComponent<DestroyableBehaviour>();
+        if (d != null)
+        {
+            d.OverallChance = -1;
+            d.ReactToCollision = false;
+            d.enabled = false;
+        }
+ 
+        // Grippy, not bouncy: birds and pigs stand on it like on real ground
+        PhysicsMaterial2D pm = new PhysicsMaterial2D();
+        pm.bounciness = 0f;
+        pm.friction = 0.9f;
+        Collider2D col = GetComponent<BoxCollider2D>();
+        if (col != null)
+            col.sharedMaterial = pm;
+ 
+        if (frozenInPlace)
+        {
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            if (rb != null)
+                rb.bodyType = RigidbodyType2D.Static;
+        }
+    }
+ 
+    void LateUpdate()
+    {
+        // Fire can't burn it away
+        if (phy != null && phy.Temperature > maxTemperature)
+            phy.Temperature = maxTemperature;
+    }
+}
+public static class BlastDamage
+{
+    public static void Apply(Vector2 center, float radius, float blockDamage, float pigDamage, GameObject ignore)
+    {
+        HashSet<GameObject> done = new HashSet<GameObject>();
+        foreach (Collider2D c in Physics2D.OverlapCircleAll(center, radius))
+        {
+            if (c == null || c.isTrigger)
+                continue;
+            GameObject go = c.attachedRigidbody != null ? c.attachedRigidbody.gameObject : c.gameObject;
+            if (go == null || go == ignore || go.layer == 11 || !done.Add(go))
+                continue;
+ 
+            // 1 right at the blast, fading to 0 at the edge
+            float dist = Vector2.Distance(c.bounds.ClosestPoint(center), center);
+            float closeness = Mathf.Clamp01(1f - dist / radius);
+            if (closeness <= 0f)
+                continue;
+ 
+            Block blk = go.GetComponent<Block>();
+            if (blk != null)
+            {
+                blk.TakeDamage(blockDamage * closeness);
+                continue;
+            }
+ 
+            BadPig pig = go.GetComponent<BadPig>();
+            if (pig != null && !pig.isNormallyInvincible)     // El Porkador shrugs it off
+                pig.Stun(pigDamage * closeness);
+        }
+    }
+}
+public class TNTBlast : MonoBehaviour
+{
+    public float blastRadius = 7f;     // Bomb: 4
+    public float blockDamage = 42f;     // damage to a block right at the blast (Bomb: 16). Hp: glass 7, wood 14, stone 28, iron 56 (circles x2)
+    public float pigDamage = 14f;       // Bomb: 8. Pigs have 10 hp
+ 
+    bool quitting = false;
+ 
+    void OnApplicationQuit()
+    {
+        quitting = true;
+    }
+ 
+    // The explosion removes the TNT, so this is the moment it goes off
+    void OnDestroy()
+    {
+        if (quitting || !gameObject.scene.isLoaded)
+            return;
+        BlastDamage.Apply(transform.position, blastRadius, blockDamage, pigDamage, gameObject);
     }
 }
 public class Egg : MonoBehaviour
@@ -3885,4 +6691,4 @@ public class Utility
         return null;
     }
 }
-// Originally uploaded by 'Lee Myung-Bak'. Do not reupload without their explicit permission.
+// Originally uploaded by 'Lee Myung-Bak', yes I have permission (I think) to upload this.

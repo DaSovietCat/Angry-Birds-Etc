@@ -28,7 +28,7 @@ namespace AngryBirds
                     OriginalItem = ModAPI.FindSpawnable("Brick"), // Searches the ingame catalog and returns with the inputted string if possible.
                     NameOverride = "Red", // Name.
                     NameToOrderByOverride = "1 1", // How the item is ordered (I didn't want it in the 'G' section, so I renamed it to Brick 2, so it shows up next to the brick.)
-                    DescriptionOverride = "Red is the leader of the flock. nothing special but he is always angry. His ability is flying objects off for seconds when activated.",// Description
+                    DescriptionOverride = "Red is the leader of the flock. nothing special but he is always angry. He has no ability, he just caws.",// Description
                     CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),//Category
                     ThumbnailOverride = ModAPI.LoadSprite("yeetred.png", 5f),
                     AfterSpawn = (Instance) =>
@@ -178,7 +178,40 @@ namespace AngryBirds
                     }
                 }
             );
-
+            //super red (space flock)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Super Red",
+                    NameToOrderByOverride = "1 1 4",   // after Homing Bird ("1 1 3")
+                    DescriptionOverride = "Red from the space flock. Flies without gravity when shot from the slingshot. When activated he sends out a red shockwave that pushes everything away.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetsuperred.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Same stats as Red
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 2f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("SuperRed.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<SuperRed>())
+                            Instance.AddComponent<SuperRed>();
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "red";            // Red's voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "SuperRed";  // SuperRed.png / SuperRed2.png
+                        Instance.GetComponent<AngryBird>().isTerence = false;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
             //chuck
             ModAPI.Register(
                 new Modification()
@@ -212,7 +245,40 @@ namespace AngryBirds
                     }
                 }
             );
-
+            //lazer bird (space flock)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Lazer Bird",
+                    NameToOrderByOverride = "1 2 1",   // after Chuck ("1 2")
+                    DescriptionOverride = "A bird from the space flock. Flies without gravity when shot from the slingshot. When activated he instantly shoots toward your mouse like a laser.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetlazerbird.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Same stats as Chuck
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 2f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("LazerBird.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<LazerBird>())
+                            Instance.AddComponent<LazerBird>();
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "yellow";           // Chuck's voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "LazerBird";  // LazerBird.png / LazerBird2.png
+                        Instance.GetComponent<AngryBird>().isTerence = false;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 1;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 8;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 1;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
             //bomb
             ModAPI.Register(
                 new Modification()
@@ -252,12 +318,60 @@ namespace AngryBirds
                         Instance.GetComponent<AngryBird>().glassMultiplier = 1;
                         Instance.GetComponent<AngryBird>().woodMultiplier = 1;
                         Instance.GetComponent<AngryBird>().stoneMultiplier = 16;
+                        Instance.GetComponent<AngryBird>().activeAfterCollide = true;
                         Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
                         Instance.transform.tag = "Player";
                     }
                 }
             );
-			
+            //space bomb (space flock): Bomb without gravity
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Space Bomb",
+                    NameToOrderByOverride = "1 3 1",   // after Bomb ("1 3")
+                    DescriptionOverride = "Bomb of the space flock. Flies without gravity when shot from the slingshot. He explodes just like Bomb and doesn't die.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetspacebomb.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Same stats as Bomb
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 4f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 4f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 4f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("SpaceBomb_collider.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<Bomb>())
+                            Instance.AddComponent<Bomb>();
+                        if (!Instance.GetComponent<SpaceFlight>())
+                            Instance.AddComponent<SpaceFlight>();      // zero gravity when shot from Slingshot X
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "black";                // Bomb's voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "SpaceBomb";     // SpaceBomb.png / SpaceBomb2.png
+                        Instance.gameObject.AddComponent<ExplosiveBehaviour>();
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().Range = 24f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().FragmentForce = 48f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ShotExplodeChance = -1f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().BurnPower = 0f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ExplodesOnFragmentHit = false;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().CanExplodeMultipleTimes = true;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().BigExplosion = true;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().DestroyOnExplode = false;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ArmOnUse = true;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().Delay = 0f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().TemperatureLimit = float.MaxValue;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 1;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 1;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 16;
+                        Instance.GetComponent<AngryBird>().activeAfterCollide = true;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
 			//shockwave
             ModAPI.Register(
                 new Modification()
@@ -289,13 +403,13 @@ namespace AngryBirds
  
                         Instance.GetComponent<AngryBird>().glassMultiplier = 3;
                         Instance.GetComponent<AngryBird>().woodMultiplier = 3;
-                        Instance.GetComponent<AngryBird>().stoneMultiplier = 24;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 22;
+						Instance.GetComponent<AngryBird>().activeAfterCollide = true;
                         Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
                         Instance.transform.tag = "Player";
                     }
                 }
             );
-
             //blue
             ModAPI.Register(
                 new Modification()
@@ -328,7 +442,41 @@ namespace AngryBirds
                     }
                 }
             );
-
+            //lightning birds (space flock): The Blues without gravity
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Lightning Birds",
+                    NameToOrderByOverride = "1 4 1",   // after Blue ("1 4")
+                    DescriptionOverride = "The Blues of the space flock. They fly without gravity when shot from the slingshot. When activated they split into three.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetlightningbird.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Same stats as The Blues
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 0.5f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 0.5f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 0.5f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("LightningBird.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<Blue>())
+                            Instance.AddComponent<Blue>();
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<SpaceFlight>())
+                            Instance.AddComponent<SpaceFlight>();      // zero gravity when shot from Slingshot X
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "blue";                   // the Blues' voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "LightningBird";   // LightningBird.png / LightningBird2.png
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 20;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 0f;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
             //terence
             ModAPI.Register(
                 new Modification()
@@ -355,6 +503,57 @@ namespace AngryBirds
                         Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
                         Instance.GetComponent<AngryBird>().codeName = "terence";
                         Instance.GetComponent<AngryBird>().codeName_sprite = "Terence";
+                        Instance.GetComponent<AngryBird>().AI = false;
+                        Instance.GetComponent<AngryBird>().isTerence = true;
+                        Instance.gameObject.GetComponent<Terence>().explosionSource = Instance.gameObject.AddComponent<ExplosiveBehaviour>();
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().Range = 8f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().FragmentForce = 20f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ShotExplodeChance = -1f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().BurnPower = 0f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ExplodesOnFragmentHit = false;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().CanExplodeMultipleTimes = true;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().BigExplosion = true;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().DestroyOnExplode = false;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().Delay = 0f;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().ArmOnUse = false;
+                        Instance.gameObject.GetComponent<ExplosiveBehaviour>().TemperatureLimit = float.MaxValue;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 2f;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 2f;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 2f;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //incredible terence (space flock): Terence without gravity
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Incredible Terence",
+                    NameToOrderByOverride = "1 6 1",   // after Terence ("1 6")
+                    DescriptionOverride = "Terence of the space flock. Da Biggest Bird, now without gravity when shot from the slingshot. He will destroy literally everything except for map blocks at high speed.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetincredibleterence.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Same stats as Terence
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 5000f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 5000f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 5000f;
+                        Instance.GetComponent<PhysicalBehaviour>().Disintegratable = false;
+                        Instance.GetComponent<PhysicalBehaviour>().BulletPenetration = false;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("IncredibleTerence.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<Terence>())
+                            Instance.AddComponent<Terence>();
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<SpaceFlight>())
+                            Instance.AddComponent<SpaceFlight>();      // zero gravity when shot from Slingshot X
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "terence";                      // Terence's voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "IncredibleTerence";     // IncredibleTerence.png
                         Instance.GetComponent<AngryBird>().AI = false;
                         Instance.GetComponent<AngryBird>().isTerence = true;
                         Instance.gameObject.GetComponent<Terence>().explosionSource = Instance.gameObject.AddComponent<ExplosiveBehaviour>();
@@ -521,6 +720,7 @@ namespace AngryBirds
                         Instance.GetComponent<AngryBird>().glassMultiplier = 8;
                         Instance.GetComponent<AngryBird>().woodMultiplier = 8;
                         Instance.GetComponent<AngryBird>().stoneMultiplier = 2;
+						Instance.GetComponent<AngryBird>().activeAfterCollide = true;
                         Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
                         Instance.transform.tag = "Player";
                     }
@@ -593,6 +793,39 @@ namespace AngryBirds
                     }
                 }
             );
+            //silver
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Silver",
+                    NameToOrderByOverride = "1 9 2 5",   // after Ice Bird ("1 9 2"), before Space Egg ("1 9 3")
+                    DescriptionOverride = "A fast bird. When activated she does a small loop at high speed, then dives straight down.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetsilver.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 2;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 2;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 2;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Silver_collider.png", 1f);
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<Silver>())
+                            Instance.AddComponent<Silver>();
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "silver";
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "Silver";
+                        Instance.GetComponent<AngryBird>().isTerence = false;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 14;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
 			//space egg
             ModAPI.Register(
                 new Modification()
@@ -633,7 +866,7 @@ namespace AngryBirds
                     }
                 }
             );
-			//mighty eagle (sardine can)
+            //mighty eagle (sardine can)
             ModAPI.Register(
                 new Modification()
                 {
@@ -648,14 +881,26 @@ namespace AngryBirds
                         Instance.GetComponent<PhysicalBehaviour>().InitialMass = 8f;
                         Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 8f;
                         Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 8f;
-                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Metal");
+                        // "Human" like the Space Egg: the bird script needs these properties to start properly
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
                         Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("idontknowitsname.png", 1f);
-                        Instance.AddComponent<PolygonCollider2D>();
+                        // (no PolygonCollider2D here any more: AngryBird makes its own)
  
                         if (!Instance.GetComponent<MightyEagleCan>())
                             Instance.AddComponent<MightyEagleCan>();
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<CanBird>())
+                            Instance.AddComponent<CanBird>();
  
-                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
+                        AngryBird ab = Instance.GetComponent<AngryBird>();
+                        ab.mouth = Instance.AddComponent<AudioSource>();
+                        ab.mouth.mute = true;                    // cans don't talk
+                        ab.codeName = "red";                     // only so the voice loading finds files (muted anyway)
+                        ab.codeName_sprite = "idontknowitsname";
+                        ab.activeAfterCollide = true;            // the can can still be used after it lands (set false to lock it like the birds)
+                        ab.SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
                     }
                 }
             );
@@ -668,20 +913,64 @@ namespace AngryBirds
                     NameToOrderByOverride = "1 9 5",   // right after Mighty Eagle ("1 9 4")
                     DescriptionOverride = "A strange can. Activate it and a wormhole opens. A second later the Space Eagle bursts out, blasting everything away.",
                     CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
-                    ThumbnailOverride = ModAPI.LoadSprite("yeetspaceeagle.png", 5f),   // NEW png
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetspaceeagle.png", 5f),
                     AfterSpawn = (Instance) =>
                     {
                         Instance.GetComponent<PhysicalBehaviour>().InitialMass = 8f;
                         Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 8f;
                         Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 8f;
-                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Metal");
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
                         Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("idontknowitsname.png", 1f);   // same can image as Mighty Eagle
-                        Instance.AddComponent<PolygonCollider2D>();
  
                         if (!Instance.GetComponent<SpaceEagleCan>())
                             Instance.AddComponent<SpaceEagleCan>();
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<CanBird>())
+                            Instance.AddComponent<CanBird>();
  
-                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
+                        AngryBird ab = Instance.GetComponent<AngryBird>();
+                        ab.mouth = Instance.AddComponent<AudioSource>();
+                        ab.mouth.mute = true;
+                        ab.codeName = "red";
+                        ab.codeName_sprite = "idontknowitsname";
+                        ab.activeAfterCollide = true;
+                        ab.SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //custom bird
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Custom Bird",
+                    NameToOrderByOverride = "1 9 6",   // after Space Eagle ("1 9 5")
+                    DescriptionOverride = "A bird you design yourself. Right-click it to change its mass, its glass / wood / stone strength and its ability (any ability in the mod).",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetcustombird.png", 5f),   // NEW png: catalog icon
+                    AfterSpawn = (Instance) =>
+                    {
+                        // Starting stats (the same as Red). The bird's own right-click menu changes them from here.
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 2f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 2f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("CustomBird.png", 1f);   // NEW png
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Human");
+                        if (!Instance.GetComponent<AngryBird>())
+                            Instance.AddComponent<AngryBird>();
+                        if (!Instance.GetComponent<CustomBird>())
+                            Instance.AddComponent<CustomBird>();
+                        Instance.GetComponent<AngryBird>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<AngryBird>().codeName = "red";               // Red's voice files
+                        Instance.GetComponent<AngryBird>().codeName_sprite = "CustomBird"; // CustomBird.png / CustomBird2.png
+                        Instance.GetComponent<AngryBird>().isTerence = false;
+                        Instance.GetComponent<AngryBird>().glassMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().woodMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().stoneMultiplier = 2;
+                        Instance.GetComponent<AngryBird>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
                     }
                 }
             );
@@ -935,6 +1224,177 @@ namespace AngryBirds
                     }
                 }
             );
+            //boss corporal
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Rod"),
+                    NameOverride = "Boss Corporal",
+                    NameToOrderByOverride = "2 9 3",
+                    DescriptionOverride = "Corporal Pig, but huge. Takes a lot more punishment before going down.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetpigH.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<BoxCollider2D>().enabled = false;
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 8f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 8f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 8f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Cop.png", 1f);
+                        Instance.AddComponent<PolygonCollider2D>();
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<BadPig>())
+                            Instance.AddComponent<BadPig>();
+                        if (!Instance.GetComponent<BossPig>())
+                            Instance.AddComponent<BossPig>();
+                        Instance.GetComponent<BossPig>().sizeMultiplier = 1.8f;
+                        Instance.GetComponent<BadPig>().hp = 48;
+                        Instance.GetComponent<BadPig>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<BadPig>().codeName = "corporal";
+                        Instance.GetComponent<BadPig>().codeName_sprite = "Cop";
+                        Instance.GetComponent<BadPig>().SetPersonality(ABcharacters.Personality.Brave);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //boss chef
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Rod"),
+                    NameOverride = "Boss Chef",
+                    NameToOrderByOverride = "2 9 4",
+                    DescriptionOverride = "Chef, but huge. The kitchen is his now, and he takes a lot of beating.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetchef.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<BoxCollider2D>().enabled = false;
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 10f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 10f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 10f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Chef.png", 1f);
+                        Instance.AddComponent<PolygonCollider2D>();
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<BadPig>())
+                            Instance.AddComponent<BadPig>();
+                        if (!Instance.GetComponent<BossPig>())
+                            Instance.AddComponent<BossPig>();
+                        Instance.GetComponent<BossPig>().sizeMultiplier = 1.8f;
+                        Instance.GetComponent<BadPig>().hp = 100;
+                        Instance.GetComponent<BadPig>().personality = BadPig.Personality.Coward;
+                        Instance.GetComponent<BadPig>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<BadPig>().codeName = "chef";
+                        Instance.GetComponent<BadPig>().codeName_sprite = "Chef";
+                        Instance.GetComponent<BadPig>().SetPersonality(ABcharacters.Personality.Coward);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //boss foreman
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Rod"),
+                    NameOverride = "Boss Foreman",
+                    NameToOrderByOverride = "2 9 5",
+                    DescriptionOverride = "Foreman Pig, but huge. The most solid engineer in the Pig Kingdom.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetforeman.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<BoxCollider2D>().enabled = false;
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 16f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 16f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 16f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Foreman.png", 1f);
+                        Instance.AddComponent<PolygonCollider2D>();
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<BadPig>())
+                            Instance.AddComponent<BadPig>();
+                        if (!Instance.GetComponent<BossPig>())
+                            Instance.AddComponent<BossPig>();
+                        Instance.GetComponent<BossPig>().sizeMultiplier = 2f;
+                        Instance.GetComponent<BadPig>().hp = 180;
+                        Instance.GetComponent<BadPig>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<BadPig>().codeName = "moustache";
+                        Instance.GetComponent<BadPig>().codeName_sprite = "Foreman";
+                        Instance.GetComponent<BadPig>().SetPersonality(ABcharacters.Personality.Coward);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //boss king
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Rod"),
+                    NameOverride = "Boss King",
+                    NameToOrderByOverride = "2 9 6",
+                    DescriptionOverride = "King Pig, but huge. His crown has never been this heavy, and neither has he.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetking.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<BoxCollider2D>().enabled = false;
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 30f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 30f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 30f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("King.png", 1f);
+                        Instance.AddComponent<PolygonCollider2D>();
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<BadPig>())
+                            Instance.AddComponent<BadPig>();
+                        if (!Instance.GetComponent<BossPig>())
+                            Instance.AddComponent<BossPig>();
+                        Instance.GetComponent<BossPig>().sizeMultiplier = 2f;
+                        Instance.GetComponent<BadPig>().hp = 350;
+                        Instance.GetComponent<BadPig>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<BadPig>().codeName = "king";
+                        Instance.GetComponent<BadPig>().codeName_sprite = "King";
+                        Instance.GetComponent<BadPig>().SetPersonality(ABcharacters.Personality.Coward);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //boss el porkador
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Rod"),
+                    NameOverride = "Boss El Porkador",
+                    NameToOrderByOverride = "2 9 7",
+                    DescriptionOverride = "El Porkador, but even bigger. Still birdproof and still can't move by himself, but now he has a mountain of health.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetel.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<BoxCollider2D>().enabled = false;
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 512f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 512f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 512f;
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("El.png", 1f);
+                        Instance.AddComponent<PolygonCollider2D>();
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Gorse");
+                        if (!Instance.GetComponent<BadPig>())
+                            Instance.AddComponent<BadPig>();
+                        if (!Instance.GetComponent<ElPorkador>())
+                            Instance.AddComponent<ElPorkador>();
+                        if (!Instance.GetComponent<BossPig>())
+                            Instance.AddComponent<BossPig>();
+                        Instance.GetComponent<BossPig>().sizeMultiplier = 1.6f;
+                        Instance.GetComponent<BadPig>().hp = 800;
+                        Instance.GetComponent<BadPig>().personality = BadPig.Personality.Idle;
+                        Instance.GetComponent<BadPig>().torque = 2;
+                        Instance.GetComponent<BadPig>().isNormallyInvincible = true;
+                        Instance.GetComponent<BadPig>().mouth = Instance.AddComponent<AudioSource>();
+                        Instance.GetComponent<BadPig>().codeName = "el";
+                        Instance.GetComponent<BadPig>().codeName_sprite = "El";
+                        Instance.GetComponent<BadPig>().SetPersonality(ABcharacters.Personality.Idle);
+                        Instance.transform.tag = "Player";
+                    }
+                }
+            );
             //planet pig
             ModAPI.Register(
                 new Modification()
@@ -1067,6 +1527,122 @@ namespace AngryBirds
                             Instance.AddComponent<SlingshotX>();
  
                         Instance.transform.tag = "Player";
+                    }
+                }
+            );
+            //kingsling (power up)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Kingsling",
+                    NameToOrderByOverride = "4 1",   // first power up
+                    DescriptionOverride = "A power up. Touch it to a Slingshot X and that slingshot launches birds faster from now on.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetkingsling.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Wood");
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Kingsling.png", 1f);
+ 
+                        // Swap the brick's box collider for one that matches the sprite
+                        UnityEngine.Object.Destroy(Instance.GetComponent<BoxCollider2D>());
+                        Instance.AddComponent<PolygonCollider2D>();
+ 
+                        if (!Instance.GetComponent<Kingsling>())
+                            Instance.AddComponent<Kingsling>();
+ 
+                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
+                    }
+                }
+            );
+            //sling scope (power up)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Sling Scope",
+                    NameToOrderByOverride = "4 2",   // second power up
+                    DescriptionOverride = "A power up. Touch it to a Slingshot X and that slingshot gets a much longer red aiming guide.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetslingscope.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Wood");
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("SlingScope.png", 1f);
+ 
+                        // Swap the brick's box collider for one that matches the sprite
+                        UnityEngine.Object.Destroy(Instance.GetComponent<BoxCollider2D>());
+                        Instance.AddComponent<PolygonCollider2D>();
+ 
+                        if (!Instance.GetComponent<SlingScope>())
+                            Instance.AddComponent<SlingScope>();
+ 
+                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
+                    }
+                }
+            );
+            //power potion (power up)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Power Potion",
+                    NameToOrderByOverride = "4 3",   // third power up
+                    DescriptionOverride = "A power up. Touch it to a Slingshot X and the bird on it drinks it: that one bird gets bigger and heavier.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetpowerpotion.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Glass");
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("PowerPotion.png", 1f);
+ 
+                        // Swap the brick's box collider for one that matches the sprite
+                        UnityEngine.Object.Destroy(Instance.GetComponent<BoxCollider2D>());
+                        Instance.AddComponent<PolygonCollider2D>();
+ 
+                        if (!Instance.GetComponent<PowerPotion>())
+                            Instance.AddComponent<PowerPotion>();
+ 
+                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
+                    }
+                }
+            );
+            //birdquake (power up)
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Brick"),
+                    NameOverride = "Birdquake",
+                    NameToOrderByOverride = "4 4",   // fourth power up
+                    DescriptionOverride = "A power up. Activate it and a minor earthquake shakes everything.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Mod"),
+                    ThumbnailOverride = ModAPI.LoadSprite("yeetbirdquake.png", 5f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 1f;
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Wood");
+                        Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Birdquake.png", 1f);
+ 
+                        // Swap the brick's box collider for one that matches the sprite
+                        UnityEngine.Object.Destroy(Instance.GetComponent<BoxCollider2D>());
+                        Instance.AddComponent<PolygonCollider2D>();
+ 
+                        if (!Instance.GetComponent<Birdquake>())
+                            Instance.AddComponent<Birdquake>();
+ 
+                        Instance.transform.tag = "Player";   // friendly, so Terence & co. don't flatten it
                     }
                 }
             );
@@ -1862,8 +2438,45 @@ namespace AngryBirds
                         Instance.AddComponent<BoxCollider2D>();
                         Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Wood");
 
-                        Instance.GetComponent<ExplosiveBehaviour>().Range = 18f;
+                        Instance.GetComponent<ExplosiveBehaviour>().Range = 28f;
+                        if (!Instance.GetComponent<TNTBlast>())
+                            Instance.AddComponent<TNTBlast>();
                         Instance.GetComponent<ExplosiveBehaviour>().ImpactForceThreshold = 18f;
+
+                    }
+                }
+            );
+			
+            //ground block
+            ModAPI.Register(
+                new Modification()
+                {
+                    OriginalItem = ModAPI.FindSpawnable("Small Boulder"),
+                    NameOverride = "Ground",
+                    NameToOrderByOverride = "6 7",   // last in the blocks list
+                    DescriptionOverride = "A block of ground. Fixed in place and indestructible: nothing in the mod can break it, not even the Mighty Eagle.",
+                    CategoryOverride = ModAPI.FindCategory("Angry Birds Blocks"),
+                    ThumbnailOverride = GroundBlock.MakeSprite(1f),
+                    AfterSpawn = (Instance) =>
+                    {
+                        Instance.GetComponent<PhysicalBehaviour>().InitialMass = 1000f;
+                        Instance.GetComponent<PhysicalBehaviour>().TrueInitialMass = 1000f;
+                        Instance.GetComponent<PhysicalBehaviour>().rigidbody.mass = 1000f;
+                        if (Instance.GetComponent<RandomSpriteBehaviour>())
+                            Instance.GetComponent<RandomSpriteBehaviour>().enabled = false;
+                        Instance.GetComponent<Collider2D>().enabled = false;
+ 
+                        // The brown picture (drawn in code). To use your own picture instead, replace this line with:
+                        //     Instance.GetComponent<SpriteRenderer>().sprite = ModAPI.LoadSprite("Ground.png", 1f);
+                        Instance.GetComponent<SpriteRenderer>().sprite = GroundBlock.MakeSprite(4f);
+ 
+                        Instance.AddComponent<BoxCollider2D>();       // fits the picture
+                        Instance.GetComponent<PhysicalBehaviour>().Properties = ModAPI.FindPhysicalProperties("Brick");
+ 
+                        if (!Instance.GetComponent<GroundBlock>())
+                            Instance.AddComponent<GroundBlock>();
+ 
+                        Instance.transform.tag = "Player";            // the eagles and Terence skip anything with this tag
                     }
                 }
             );
